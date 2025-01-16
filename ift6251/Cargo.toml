@@ -5,7 +5,6 @@ edition = "2021"
 description = "A collection of projects created as part of the IFT6251 course at Université de Montréal."
 authors = ["etiennecollin <collin.etienne.contact@gmail.com>"]
 categories = ["nannou", "creative-coding", "algorithmic-art"]
-readme = "README.md"
 license = "MIT"
 
 [dependencies]
