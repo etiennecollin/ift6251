@@ -10,6 +10,7 @@ license = "MIT"
 [dependencies]
 nannou = "0.19.0"
 nannou_egui = "0.19.0"
+lib = { path = "../lib/" }
 
 [[bin]]
 name = "birds"
