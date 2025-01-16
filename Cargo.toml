@@ -1,0 +1,18 @@
+[workspace]
+members = ["lib", "ift6251"]
+resolver = "2"
+
+[profile.fast]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[profile.small]
+inherits = "fast"
+opt-level = "z"
+strip = "symbols"
+
+[profile.opti]
+inherits = "fast"
+debug = 1
