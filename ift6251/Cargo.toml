@@ -19,3 +19,7 @@ path = "src/birds.rs"
 [[bin]]
 name = "particles"
 path = "src/particles.rs"
+
+[[bin]]
+name = "triangles"
+path = "src/triangles.rs"
