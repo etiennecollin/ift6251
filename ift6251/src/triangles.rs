@@ -25,6 +25,7 @@ struct Settings {
     noise_scale_h: f64,
     noise_scale_time_xy: f64,
     noise_scale_time_wh: f64,
+    rotation_increment: f32,
     stroke_color: Hsla,
     fill_color: Hsla,
     noise: Perlin,
@@ -56,6 +57,7 @@ fn model(app: &App) -> Model {
         noise_scale_h: 0.042,
         noise_scale_time_xy: 0.004,
         noise_scale_time_wh: 0.01,
+        rotation_increment: 0.001,
         stroke_color: hsla(0.0, 1.0, 0.5, 0.1),
         fill_color: hsla(0.0, 1.0, 0.01, 0.1),
         noise: Perlin::new(),
@@ -100,6 +102,12 @@ fn update_egui(ctx: FrameCtx, settings: &mut Settings) {
         ui.add(egui::Slider::new(
             &mut settings.noise_scale_time_wh,
             0.000..=0.05,
+        ));
+
+        ui.label("Rotation increment:");
+        ui.add(egui::Slider::new(
+            &mut settings.rotation_increment,
+            0.00..=1.00,
         ));
 
         let rnd_color = ui.button("Random color").clicked();
@@ -176,9 +184,8 @@ fn update(app: &App, model: &mut Model, update: Update) {
     let y = settings.noise.get([t_xy, (t_xy * settings.noise_scale_y)]) * window_height;
 
     // Increment the rotation and roll of the triangle
-    let increment = 0.001;
-    let rotation = (state.rotation + increment) % (2.0 * PI);
-    let roll = (state.rotation + increment) % (2.0 * PI);
+    let rotation = (state.rotation + settings.rotation_increment) % (2.0 * PI);
+    let roll = (state.rotation + settings.rotation_increment) % (2.0 * PI);
 
     // Evolution of the colors
     settings.stroke_color = settings.stroke_color.shift_hue(0.08);
