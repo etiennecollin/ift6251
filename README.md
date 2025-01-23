@@ -2,7 +2,7 @@
 
 Here is the URL to the course repo: https://github.com/rethread-studio/algorithmic-art-course
 
-## Depencendies
+## Dependencies
 
 - `rust >= 1.83.0`
 
