@@ -11,10 +11,16 @@ license = "MIT"
 nannou = "0.19.0"
 nannou_egui = "0.19.0"
 lib = { path = "../lib/" }
+rayon = "1.10.0"
+indicatif = { version = "0.17.11", features = ["improved_unicode", "rayon"] }
 
 [[bin]]
 name = "birds"
 path = "src/birds.rs"
+
+[[bin]]
+name = "mandelbrot"
+path = "src/mandelbrot.rs"
 
 [[bin]]
 name = "particles"
