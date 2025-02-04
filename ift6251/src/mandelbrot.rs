@@ -41,6 +41,7 @@ struct State {
     select_in_mandelbrot: bool,
     plot_trajectory: bool,
     noise: Perlin,
+    hue_scale: f64,
     noise_scale_x: f64,
     noise_scale_y: f64,
     noise_scale_z: f64,
@@ -72,6 +73,7 @@ fn model(app: &App) -> Model {
         select_in_mandelbrot: false,
         plot_trajectory: false,
         noise: Perlin::new(),
+        hue_scale: 0.0,
         noise_scale_x: 1.35,
         noise_scale_y: 0.75,
         noise_scale_z: 1.0,
@@ -95,6 +97,9 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
             ui.add(egui::Slider::new(&mut state.max_iterations, 10..=10000));
 
             ui.separator();
+
+            ui.label("Hue scale:");
+            ui.add(egui::Slider::new(&mut state.hue_scale, 0.0..=1.0));
 
             ui.label("Noise scale x:");
             ui.add(egui::Slider::new(&mut state.noise_scale_x, 0.50..=1.5));
@@ -261,11 +266,12 @@ fn to_image(array: Vec<Vec<f64>>, state: &mut State) -> ImageBuffer<image::Rgba<
             let symmetry_y = (y as f64 / height_half - 1.0).abs();
 
             let lightness = array[y as usize][x as usize] / 255.0;
-            let hue = noise.get([
-                lightness * state.noise_scale_z,
-                x as f64 / width as f64 * state.noise_scale_x,
-                symmetry_y * state.noise_scale_y,
-            ]) as f32;
+            let hue = (lightness * state.hue_scale
+                + noise.get([
+                    lightness * state.noise_scale_z,
+                    x as f64 / width as f64 * state.noise_scale_x,
+                    symmetry_y * state.noise_scale_y,
+                ])) as f32;
 
             let (r, g, b) = hsl(hue, 0.5, lightness as f32)
                 .into_rgb::<Srgb>()
