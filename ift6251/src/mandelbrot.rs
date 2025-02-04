@@ -1,4 +1,4 @@
-use std::{cell::Ref, sync::Mutex};
+use std::{cell::Ref, sync::Mutex, time::SystemTime};
 
 use indicatif::{ProgressBar, ProgressStyle};
 use lib::{
@@ -18,7 +18,15 @@ use nannou_egui::{
 use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 use wgpu::WithDeviceQueuePair;
 
-const PATH: &str = "./mandelbrot.png";
+fn get_save_path() -> String {
+    let time = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let path = format!("./mandelbrot_{:?}.png", time);
+    println!("Saving image to: {}", path);
+    path
+}
 
 fn main() {
     nannou::app(model).update(update).run()
@@ -110,7 +118,7 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
 
             let save = ui.button("Save").clicked();
             if save {
-                state.image.save(PATH).unwrap();
+                state.image.save(get_save_path()).unwrap();
             }
         });
 }
@@ -141,7 +149,7 @@ fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event:
 fn key_pressed(app: &App, model: &mut Model, key: Key) {
     match key {
         Key::Q => app.quit(),
-        Key::S => model.state.image.save(PATH).unwrap(),
+        Key::S => model.state.image.save(get_save_path()).unwrap(),
         Key::Return => model.state.redraw = true,
         _other_key => {}
     }
