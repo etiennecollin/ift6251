@@ -3,7 +3,7 @@ use std::{cell::Ref, sync::Mutex, time::SystemTime};
 use indicatif::{ProgressBar, ProgressStyle};
 use lib::{
     images::{equalize, recalibrate},
-    mandelbrot::is_in_mandelbrot,
+    mandelbrot::{is_in_mandelbrot, shift, zoom},
 };
 use nannou::{
     color::{encoding::Srgb, IntoColor},
@@ -37,11 +37,16 @@ struct State {
     continuous_redraw: bool,
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
     delta: f64,
+    x_range: (f64, f64),
+    y_range: (f64, f64),
+    zoom_speed: f64,
+    shift_speed: f64,
     max_iterations: usize,
     select_in_mandelbrot: bool,
     plot_trajectory: bool,
     noise: Perlin,
     hue_scale: f64,
+    saturation: f32,
     noise_scale_x: f64,
     noise_scale_y: f64,
     noise_scale_z: f64,
@@ -59,6 +64,7 @@ fn model(app: &App) -> Model {
         .view(view)
         .raw_event(raw_window_event)
         .key_pressed(key_pressed)
+        .mouse_wheel(mouse_wheel)
         .build()
         .unwrap();
 
@@ -69,6 +75,10 @@ fn model(app: &App) -> Model {
         continuous_redraw: false,
         image: ImageBuffer::new(width as u32, height as u32),
         delta: 0.50,
+        x_range: (-2.0, 0.50),
+        y_range: (-1.25, 1.25),
+        zoom_speed: 0.001,
+        shift_speed: 0.1,
         max_iterations: 100,
         select_in_mandelbrot: false,
         plot_trajectory: false,
@@ -77,6 +87,7 @@ fn model(app: &App) -> Model {
         noise_scale_x: 1.35,
         noise_scale_y: 0.75,
         noise_scale_z: 1.0,
+        saturation: 0.5,
     };
 
     let egui = Egui::from_window(&window);
@@ -89,17 +100,26 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
         .default_width(0.0)
         .show(&ctx, |ui| {
             ui.label("Delta:");
-            ui.add(egui::Slider::new(&mut state.delta, 0.01..=1.0));
+            ui.add(egui::Slider::new(&mut state.delta, 0.05..=1.0));
             // Round delta to be a divisor of 1.0
             state.delta = 1.0 / (1.0 / state.delta).round();
 
             ui.label("Max iterations:");
             ui.add(egui::Slider::new(&mut state.max_iterations, 10..=10000));
 
+            ui.label("Zoom speed:");
+            ui.add(egui::Slider::new(&mut state.zoom_speed, 0.0001..=0.1));
+
+            ui.label("Shift speed:");
+            ui.add(egui::Slider::new(&mut state.shift_speed, 0.0001..=0.1));
+
             ui.separator();
 
             ui.label("Hue scale:");
             ui.add(egui::Slider::new(&mut state.hue_scale, 0.0..=1.0));
+
+            ui.label("Saturation:");
+            ui.add(egui::Slider::new(&mut state.saturation, 0.0..=1.0));
 
             ui.label("Noise scale x:");
             ui.add(egui::Slider::new(&mut state.noise_scale_x, 0.50..=1.5));
@@ -152,12 +172,55 @@ fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event:
 }
 
 fn key_pressed(app: &App, model: &mut Model, key: Key) {
+    let state = &mut model.state;
     match key {
+        Key::Left => {
+            state.x_range = shift(state.x_range, -state.shift_speed);
+            state.redraw = true;
+        }
+        Key::Right => {
+            state.x_range = shift(state.x_range, state.shift_speed);
+            state.redraw = true;
+        }
+        Key::Up => {
+            state.y_range = shift(state.y_range, -state.shift_speed);
+            state.redraw = true;
+        }
+        Key::Down => {
+            state.y_range = shift(state.y_range, state.shift_speed);
+            state.redraw = true;
+        }
+        Key::Plus | Key::Equals => {
+            let zoom_factor = 1.0 - 10.0 * state.zoom_speed;
+            (state.x_range, state.y_range) = zoom(state.x_range, state.y_range, zoom_factor);
+            state.redraw = true;
+        }
+        Key::Minus => {
+            let zoom_factor = 1.0 + 10.0 * state.zoom_speed;
+            (state.x_range, state.y_range) = zoom(state.x_range, state.y_range, zoom_factor);
+            state.redraw = true;
+        }
         Key::Q => app.quit(),
         Key::S => model.state.image.save(get_save_path()).unwrap(),
         Key::Return => model.state.redraw = true,
         _other_key => {}
     }
+}
+
+fn mouse_wheel(_app: &App, model: &mut Model, delta: MouseScrollDelta, _phase: TouchPhase) {
+    let state = &mut model.state;
+
+    match delta {
+        MouseScrollDelta::LineDelta(_, y) => {
+            let zoom_factor = 1.0 + y as f64 * state.zoom_speed;
+            (state.x_range, state.y_range) = zoom(state.x_range, state.y_range, zoom_factor);
+        }
+        MouseScrollDelta::PixelDelta(pos) => {
+            let zoom_factor = 1.0 + pos.y * state.zoom_speed;
+            (state.x_range, state.y_range) = zoom(state.x_range, state.y_range, zoom_factor);
+        }
+    }
+    model.state.redraw = true;
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
@@ -221,24 +284,40 @@ fn compute_mandelbrot_array(width: usize, height: usize, state: &State) -> Vec<V
                 let y = y as f64 * delta;
 
                 // Store list of x,y coordinates at each iteration
-                let (in_mandelbrot, mut pixels) =
-                    is_in_mandelbrot(x, y, width, height, max_iterations);
+                let (in_mandelbrot, pixels) = is_in_mandelbrot(
+                    x,
+                    y,
+                    width,
+                    height,
+                    state.x_range,
+                    state.y_range,
+                    max_iterations,
+                );
 
                 // Skip the pixel or not
-                if in_mandelbrot == select_in_mandelbrot {
+                if in_mandelbrot.is_none() == select_in_mandelbrot {
                     if plot_trajectory {
                         // Increment the pixel value for the visited pixels
-                        pixel_array.append(&mut pixels);
+                        pixel_array.append(
+                            &mut pixels
+                                .into_iter()
+                                .map(|(x, y)| (x, y, in_mandelbrot.unwrap_or(1)))
+                                .collect(),
+                        );
                     } else {
-                        pixel_array.push((x as usize, y as usize));
+                        pixel_array.push((
+                            x as usize,
+                            y as usize,
+                            in_mandelbrot.unwrap_or(max_iterations),
+                        ));
                     }
                 }
             });
 
             // Increment the pixel value for the visited pixels
             let mut array_lock = array.lock().unwrap();
-            pixel_array.iter().for_each(|(x, y)| {
-                array_lock[*y][*x] += 1.0;
+            pixel_array.into_iter().for_each(|(x, y, v)| {
+                array_lock[y][x] += v as f64;
             });
 
             // Update the progress bar
@@ -273,7 +352,7 @@ fn to_image(array: Vec<Vec<f64>>, state: &mut State) -> ImageBuffer<image::Rgba<
                     symmetry_y * state.noise_scale_y,
                 ])) as f32;
 
-            let (r, g, b) = hsl(hue, 0.5, lightness as f32)
+            let (r, g, b) = hsl(hue, state.saturation, lightness as f32)
                 .into_rgb::<Srgb>()
                 .into_format::<u8>()
                 .into_components();

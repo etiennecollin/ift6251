@@ -19,17 +19,20 @@ pub fn is_in_mandelbrot(
     y: f64,
     width: usize,
     height: usize,
+    x_range: (f64, f64),
+    y_range: (f64, f64),
+
     max_iterations: usize,
-) -> (bool, Vec<(usize, usize)>) {
+) -> (Option<usize>, Vec<(usize, usize)>) {
     // Compute the real and imaginary parts of the number c associated with the pixel
-    let c_real = find_real_from_x(x, width);
-    let c_imaginary = find_imaginary_from_y(y, height);
+    let c_real = map(x, (0.0, width as f64), x_range);
+    let c_imaginary = map(y, (0.0, height as f64), y_range);
     let mut pixels = Vec::with_capacity(max_iterations);
 
     // Initialize the first number in the sequence
     let mut real = 0.0;
     let mut imaginary = 0.0;
-    for _ in 0..max_iterations {
+    for i in 0..max_iterations {
         // Compute next number in the sequence
         let new_real = calculate_next_real(c_real, real, imaginary);
         let new_imaginary = calculate_next_imaginary(c_imaginary, real, imaginary);
@@ -42,73 +45,83 @@ pub fn is_in_mandelbrot(
         // Else, we cannot conclude that the sequence diverges
         let diverges = calculate_modulus(real, imaginary) > 2.0;
         if diverges {
-            return (false, pixels);
+            return (Some(i), pixels);
         }
         // Store the x,y coordinates at each iteration
-        let i = find_x_from_real(real, width);
-        let j = find_y_from_imaginary(imaginary, height);
+        let i = map_inverse(real, (0.0, width as f64), x_range);
+        let j = map_inverse(imaginary, (0.0, height as f64), y_range);
         if i < width as i32 && i >= 0 && j < height as i32 && j >= 0 {
             pixels.push((i as usize, j as usize));
         }
     }
     // We cannot conclude that the sequence diverges so the pixel belongs to Mandlebrot's set
-    (true, pixels)
+    (None, pixels)
 }
 
-/// Takes a pixel as an argument. Returns the real part of the number c
+/// Takes a number and maps it from one range to another.
 ///
 /// # Arguments
 ///
-/// - `x` - The x-coordinate of the pixel.
-/// - `width` - The width of the image.
+/// - `x` - The number to map.
+/// - `x_range` - The range of x.
+/// - `c_range` - The range to map x to.
 ///
 /// # Returns
 ///
-/// - The real part of the number c.
-fn find_real_from_x(x: f64, width: usize) -> f64 {
-    2.0 * (x - width as f64 / 1.35) / (width as f64 - 1.0)
+/// - The mapped number.
+fn map(x: f64, x_range: (f64, f64), c_range: (f64, f64)) -> f64 {
+    (x - x_range.0) / (x_range.1 - x_range.0) * (c_range.1 - c_range.0) + c_range.0
 }
 
-/// Takes a pixel as an argument. Returns the imaginary part of the number c
+/// Performs an inverse map
 ///
 /// # Arguments
 ///
-/// - `y` - The y-coordinate of the pixel.
-/// - `height` - The height of the image.
+/// - `c` - The number to map.
+/// - `x_range` - The range of x.
+/// - `c_range` - The range to map x to.
 ///
 /// # Returns
 ///
-/// - The imaginary part of the number c.
-fn find_imaginary_from_y(y: f64, height: usize) -> f64 {
-    2.0 * (y - height as f64 / 2.0) / (height as f64 - 1.0)
+/// - The mapped number.
+fn map_inverse(c: f64, x_range: (f64, f64), c_range: (f64, f64)) -> i32 {
+    ((c - c_range.0) / (c_range.1 - c_range.0) * (x_range.1 - x_range.0) + x_range.0) as i32
 }
 
-/// Takes a real number as an argument. Returns the pixel associated with this real number
+/// Takes the x and y ranges and zooms in by a factor of `zoom_factor`
 ///
 /// # Arguments
 ///
-/// - `real` - The real part of the number.
-/// - `width` - The width of the image.
+/// - `x_range` - The range of x.
+/// - `y_range` - The range of y.
+/// - `zoom_factor` - The factor to zoom in by.
 ///
 /// # Returns
 ///
-/// - The x-coordinate of the pixel.
-fn find_x_from_real(real: f64, width: usize) -> i32 {
-    (real * (width as f64 - 1.0) / 2.0 + width as f64 / 1.35) as i32
+/// - The new x and y ranges after zooming in.
+pub fn zoom(
+    x_range: (f64, f64),
+    y_range: (f64, f64),
+    zoom_factor: f64,
+) -> ((f64, f64), (f64, f64)) {
+    let x_range = (x_range.0 * zoom_factor, x_range.1 * zoom_factor);
+    let y_range = (y_range.0 * zoom_factor, y_range.1 * zoom_factor);
+
+    (x_range, y_range)
 }
 
-/// Takes an imaginary number as an argument. Returns the pixel associated with this imaginary number
+/// Takes a range and shifts it by an offset
 ///
 /// # Arguments
 ///
-/// - `imaginary` - The imaginary part of the number.
-/// - `height` - The height of the image.
+/// - `range` - The range of x.
+/// - `offset` - The offset to shift by.
 ///
 /// # Returns
 ///
-/// - The y-coordinate of the pixel.
-fn find_y_from_imaginary(imaginary: f64, height: usize) -> i32 {
-    (imaginary * (height as f64 - 1.0) / 2.0 + height as f64 / 2.0) as i32
+/// - The new range after shifting.
+pub fn shift(range: (f64, f64), offset: f64) -> (f64, f64) {
+    (range.0 + offset, range.1 + offset)
 }
 
 /// Takes the real and imaginary parts of a number as arguments. Returns the modulus of the number
