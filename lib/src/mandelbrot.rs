@@ -34,8 +34,7 @@ pub fn is_in_mandelbrot(
     let mut imaginary = 0.0;
     for i in 0..max_iterations {
         // Compute next number in the sequence
-        let new_real = calculate_next_real(c_real, real, imaginary);
-        let new_imaginary = calculate_next_imaginary(c_imaginary, real, imaginary);
+        let (new_real, new_imaginary) = calculate_next(c_real, c_imaginary, real, imaginary);
 
         // Update the current number in the sequence
         real = new_real;
@@ -138,40 +137,20 @@ fn calculate_modulus(real_part: f64, imaginary_part: f64) -> f64 {
     (real_part.powi(2) + imaginary_part.powi(2)).sqrt()
 }
 
-/// Calculates the next real number in the sequence
-///
-/// z[n+1] = z[n]^2 + c  =>  x[n+1] = x[n]^2 - y[n]^2 + Re(c)
-/// x represent the real part of x_n
-/// y represents the imaginary part of x_n
+/// Calculates the next number in the sequence
 ///
 /// # Arguments
 ///
-/// - `c_imaginary` - The imaginary part of the number c.
-/// - `real` - The real part of the number z[n].
-/// - `imaginary` - The imaginary part of the number z[n].
+/// - `c_real`: The real part of the number c.
+/// - `c_imaginary`: The imaginary part of the number c.
+/// - `real`: The real part of the number z[n].
+/// - `imaginary`: The imaginary part of the number z[n].
 ///
 /// # Returns
 ///
-/// - The next real number in the sequence.
-fn calculate_next_real(c_real: f64, real: f64, imaginary: f64) -> f64 {
-    real.powi(2) - imaginary.powi(2) + c_real
-}
-
-/// Calculates the next imaginary number in the sequence
-///
-/// z[n+1] = z[n]^2 + c  =>  y[n+1] = 2 * x[n] * y[n] + Im(c)
-/// x represent the real part of x_n
-/// y represents the imaginary part of x_n
-///
-/// # Arguments
-///
-/// - `c_imaginary` - The imaginary part of the number c.
-/// - `real` - The real part of the number z[n].
-/// - `imaginary` - The imaginary part of the number z[n].
-///
-/// # Returns
-///
-/// - The next imaginary number in the sequence.
-fn calculate_next_imaginary(c_imaginary: f64, real: f64, imaginary: f64) -> f64 {
-    2.0 * real * imaginary + c_imaginary
+/// - A tuple containing the real and imaginary parts of the next number in the sequence.
+fn calculate_next(c_real: f64, c_imaginary: f64, real: f64, imaginary: f64) -> (f64, f64) {
+    let res_real = real.powi(2) - imaginary.powi(2) + c_real;
+    let res_imaginary = 2.0 * real * imaginary + c_imaginary;
+    (res_real, res_imaginary)
 }

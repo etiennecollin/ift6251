@@ -1,4 +1,15 @@
 // Inspired by: https://www.local-guru.net/blog/2020/12/19/nannou-experiment
+//
+// Cool values:
+// Noise scale x 0.03218235128341096
+// Noise scale y 0.06194991627131155
+// Noise scale w 0.07323387803617847
+// Noise scale h 0.06021031392057739
+// Noise scale time xy 0.0007596394736761769
+// Noise scale time wh 0.01868244391839513
+// Perlin seed 0
+// Stroke color HSLA=(RgbHue(273.71014), 0.54207826, 0.23118138, 0.1)
+// Fill color HSLA=(RgbHue(332.50726), 0.7435478, 0.27593488, 0.01)
 
 use nannou::{
     color::Hue,

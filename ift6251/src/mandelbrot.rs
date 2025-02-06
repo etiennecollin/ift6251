@@ -331,6 +331,7 @@ fn compute_mandelbrot_array(width: usize, height: usize, state: &State) -> Vec<V
     let array_lock = array.lock().unwrap();
     array_lock.clone()
 }
+
 fn to_image(array: Vec<Vec<f64>>, state: &mut State) -> ImageBuffer<image::Rgba<u8>, Vec<u8>> {
     let width = array[0].len() as u32;
     let height = array.len() as u32;
