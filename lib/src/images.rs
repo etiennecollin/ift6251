@@ -1,5 +1,7 @@
 /// Recalibrates the pixel values of a 2D array representing an image to the range [0, 255].
 ///
+/// Taken from my teacher, Max Mignotte:
+/// https://www.iro.umontreal.ca/~mignotte/
 ///
 /// # Arguments
 ///
@@ -47,6 +49,9 @@ pub fn recalibrate(mat: &mut [Vec<f64>]) {
 }
 
 /// Performs histogram equalization on a 2D array of pixel values (luminance).
+///
+/// Taken from my teacher, Max Mignotte:
+/// https://www.iro.umontreal.ca/~mignotte/
 ///
 /// # Arguments
 ///
