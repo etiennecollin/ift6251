@@ -2,7 +2,7 @@
 
 Here is the URL to the course repo: https://github.com/rethread-studio/algorithmic-art-course
 
-## TOC
+## Table of Contents
 
 <!-- vim-markdown-toc GFM -->
 
@@ -10,14 +10,16 @@ Here is the URL to the course repo: https://github.com/rethread-studio/algorithm
 - [How-to](#how-to)
 - [Experiments](#experiments)
   - [birds](#birds)
+    - [Interaction](#interaction)
     - [Running](#running)
   - [particles](#particles)
+    - [Interaction](#interaction-1)
     - [Running](#running-1)
   - [triangles](#triangles)
-    - [Interaction](#interaction)
+    - [Interaction](#interaction-2)
     - [Running](#running-2)
   - [mandelbrot](#mandelbrot)
-    - [Interaction](#interaction-1)
+    - [Interaction](#interaction-3)
     - [Running](#running-3)
     - [Next Steps](#next-steps)
 
@@ -46,7 +48,14 @@ where `<bin-name>` is one of:
 
 ### birds
 
+![birds](./assets/birds.png)
+
 This experiments simply models the flocking behaviour of birds.
+
+#### Interaction
+
+- **`S` Key** → Save the current frame
+- **`Q` Key** → Quit
 
 #### Running
 
@@ -60,8 +69,15 @@ cargo run --release --bin birds
 
 ### particles
 
+![particles](./assets/particles.png)
+
 This experiments is a simple particle simulator featuring non-elastic collisions.
 Each particle has a mass that changes its color and size.
+
+#### Interaction
+
+- **`S` Key** → Save the current frame
+- **`Q` Key** → Quit
 
 #### Running
 
@@ -74,6 +90,11 @@ cargo run --release --bin particles
 ---
 
 ### triangles
+
+|                                        |                                        |
+| :------------------------------------: | :------------------------------------: |
+| ![triangles](./assets/triangles_1.png) | ![triangles](./assets/triangles_2.png) |
+| ![triangles](./assets/triangles_3.png) | ![triangles](./assets/triangles_4.png) |
 
 For this experimentation, I drew inspiration from two main sources.
 
@@ -101,6 +122,12 @@ cargo run --release --bin triangles
 ---
 
 ### mandelbrot
+
+|                                                      |                                                      |
+| :--------------------------------------------------: | :--------------------------------------------------: |
+| ![mandelbrot](./assets/mandelbrot_1738696563411.png) | ![mandelbrot](./assets/mandelbrot_1738698590929.png) |
+| ![mandelbrot](./assets/mandelbrot_1738876587104.png) | ![mandelbrot](./assets/mandelbrot_1738663114579.png) |
+| ![mandelbrot](./assets/mandelbrot_1738699421314.png) | ![mandelbrot](./assets/mandelbrot_1738707742548.png) |
 
 For this experiment, I drew inspiration from a simple but profound mathematical theme: **recursion**. The Mandelbrot set is the ultimate recursive fractal; each point in the complex plane is tested against a rule that feeds back into itself, again and again, to determine its fate.
 
