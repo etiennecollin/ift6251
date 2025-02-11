@@ -1,0 +1,13 @@
+[package]
+name = "point-cloud-renderer"
+version = "0.1.0"
+edition = "2021"
+description = "A point cloud renderer."
+authors = ["etiennecollin <collin.etienne.contact@gmail.com>"]
+license = "MIT"
+
+[dependencies]
+rayon = "1.10.0"
+nalgebra = { version = "0.33.2", features = ["rayon"] }
+image = "0.25.5"
+rand = "0.9.0"

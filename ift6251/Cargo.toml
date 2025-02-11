@@ -4,15 +4,19 @@ version = "0.1.0"
 edition = "2021"
 description = "A collection of projects created as part of the IFT6251 course at Université de Montréal."
 authors = ["etiennecollin <collin.etienne.contact@gmail.com>"]
-categories = ["nannou", "creative-coding", "algorithmic-art"]
 license = "MIT"
 
 [dependencies]
 nannou = "0.19.0"
 nannou_egui = "0.19.0"
 lib = { path = "../lib/" }
+point-cloud-renderer = { path = "../point-cloud-renderer/" }
 rayon = "1.10.0"
 indicatif = { version = "0.17.11", features = ["improved_unicode", "rayon"] }
+
+[[bin]]
+name = "cloud"
+path = "src/cloud.rs"
 
 [[bin]]
 name = "birds"

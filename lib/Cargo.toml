@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 description = "A few utilities used for the IFT6251 projects."
 authors = ["etiennecollin <collin.etienne.contact@gmail.com>"]
-categories = ["nannou", "creative-coding", "algorithmic-art"]
 license = "MIT"
 
 [dependencies]
