@@ -40,3 +40,12 @@ impl Point {
         )
     }
 }
+
+impl Default for Point {
+    fn default() -> Self {
+        Self {
+            position: Point3::new(0.0, 0.0, 0.0),
+            color: PixelType::from([0, 0, 0, 255]),
+        }
+    }
+}

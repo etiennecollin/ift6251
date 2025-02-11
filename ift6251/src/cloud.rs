@@ -11,9 +11,11 @@ use nannou_egui::{
 use point_cloud_renderer::{
     camera::{Camera, CameraReferenceFrame},
     point::Point,
-    render::{generate_random_point_cloud, render_image},
+    render::{read_e57, render_image},
 };
 use wgpu::WithDeviceQueuePair;
+
+const POINT_CLOUD_PATH: &str = "./data/union_station.e57";
 
 fn main() {
     nannou::app(model).update(update).run()
@@ -56,17 +58,18 @@ fn model(app: &App) -> Model {
     );
 
     // Generate a random point cloud
-    let range_x = (-100.0, 100.0);
-    let range_y = (-100.0, 100.0);
-    let range_z = (-100.0, 100.0);
-    let points = generate_random_point_cloud(500000, range_x, range_y, range_z);
+    // let range_x = (-100.0, 100.0);
+    // let range_y = (-100.0, 100.0);
+    // let range_z = (-100.0, 100.0);
+    // let points = generate_random_point_cloud(500000, range_x, range_y, range_z);
+    let points = read_e57(POINT_CLOUD_PATH.to_owned()).unwrap();
     camera.fit_points(&points);
 
     let state = State {
         camera,
         points,
         image: ImageBuffer::new(width as u32, height as u32),
-        movement_speed: 1.0,
+        movement_speed: 5.0,
     };
 
     let egui = Egui::from_window(&window);
@@ -82,31 +85,31 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
         .show(&ctx, |ui| {
             ui.label("x:");
             let mut x = camera.reference_frame.position.x;
-            ui.add(egui::Slider::new(&mut x, -150.0..=150.0));
+            ui.add(egui::Slider::new(&mut x, -1000.0..=1000.0));
             camera.reference_frame.update_position_x(x);
 
             ui.label("y:");
             let mut y = camera.reference_frame.position.y;
-            ui.add(egui::Slider::new(&mut y, -150.0..=150.0));
+            ui.add(egui::Slider::new(&mut y, -1000.0..=1000.0));
             camera.reference_frame.update_position_y(y);
 
             ui.label("z:");
             let mut z = camera.reference_frame.position.z;
-            ui.add(egui::Slider::new(&mut z, -150.0..=150.0));
+            ui.add(egui::Slider::new(&mut z, -1000.0..=1000.0));
             camera.reference_frame.update_position_z(z);
 
             ui.separator();
 
             ui.label("fov:");
-            ui.add(egui::Slider::new(&mut camera.fov, 0.0..=180.0));
+            ui.add(egui::Slider::new(&mut camera.fov, 1.0..=180.0));
 
             ui.label("screen_distance:");
-            ui.add(egui::Slider::new(&mut camera.screen_distance, 0.0..=10.0));
+            ui.add(egui::Slider::new(&mut camera.screen_distance, 1.0..=10.0));
 
             ui.separator();
 
             ui.label("movement_speed:");
-            ui.add(egui::Slider::new(&mut state.movement_speed, 0.0..=25.0));
+            ui.add(egui::Slider::new(&mut state.movement_speed, 1.0..=50.0));
         });
 }
 

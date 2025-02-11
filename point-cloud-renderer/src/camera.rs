@@ -134,7 +134,7 @@ impl Camera {
     }
 
     /// Intersect a point in 3D space with the screen and return the pixel coordinates
-    pub fn intersect_screen(&self, point: &Point) -> Option<(usize, usize)> {
+    pub fn intersect_screen(&self, point: &Point) -> Option<(f64, (usize, usize))> {
         // Direction from camera to the point in world space
         let ray_direction = (point.position - self.reference_frame.position).normalize();
         let look_direction = self.reference_frame.look_direction();
@@ -166,7 +166,9 @@ impl Camera {
         let normalized_y = relative_position.dot(&self.reference_frame.up) / (screen_height / 2.0);
 
         // Convert the normalized device coordinates to pixel coordinates
-        self.screen.to_pixel_coords(normalized_x, normalized_y)
+        self.screen
+            .to_pixel_coords(normalized_x, normalized_y)
+            .map(|position| (distance, position))
     }
 
     /// Intersect a point in 3D space with the screen using depth of field
@@ -175,10 +177,11 @@ impl Camera {
         point: &Point,
         aperture_size: f64,
         samples: usize,
-    ) -> Option<(usize, usize)> {
+    ) -> Option<(f64, (usize, usize))> {
         let mut rng = rng();
         let mut pixel_sum = (0.0, 0.0);
         let mut valid_samples = 0;
+        let mut distance_sum = 0.0;
 
         // Recalculate screen dimensions based on the latest FOV
         let fov_rad = self.fov.to_radians();
@@ -222,6 +225,7 @@ impl Camera {
             if let Some((px, py)) = self.screen.to_pixel_coords(normalized_x, normalized_y) {
                 pixel_sum.0 += px as f64;
                 pixel_sum.1 += py as f64;
+                distance_sum += distance;
                 valid_samples += 1;
             }
         }
@@ -230,7 +234,8 @@ impl Camera {
         if valid_samples > 0 {
             let avg_x = (pixel_sum.0 / valid_samples as f64).round() as usize;
             let avg_y = (pixel_sum.1 / valid_samples as f64).round() as usize;
-            Some((avg_x, avg_y))
+            let avg_distance = distance_sum / valid_samples as f64;
+            Some((avg_distance, (avg_x, avg_y)))
         } else {
             None
         }
