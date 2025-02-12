@@ -17,14 +17,13 @@ use point_cloud_renderer::{
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use wgpu::WithDeviceQueuePair;
 
-const POINT_CLOUD_PATH: &str = "./data/union_station.e57";
-
 fn main() {
     nannou::app(model).update(update).run()
 }
 
 struct State {
     camera: Camera,
+    file_path: String,
     initial_points: Vec<Point>,
     points: Vec<Point>,
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
@@ -38,6 +37,13 @@ struct State {
 struct Model {
     egui: Egui,
     state: State,
+}
+
+fn random_points() -> Vec<Point> {
+    let range_x = (-100.0, 100.0);
+    let range_y = (-100.0, 100.0);
+    let range_z = (-100.0, 100.0);
+    generate_random_point_cloud(500000, range_x, range_y, range_z)
 }
 
 fn model(app: &App) -> Model {
@@ -65,21 +71,18 @@ fn model(app: &App) -> Model {
     );
 
     // Generate a random point cloud
-    // let range_x = (-100.0, 100.0);
-    // let range_y = (-100.0, 100.0);
-    // let range_z = (-100.0, 100.0);
-    // let points = generate_random_point_cloud(500000, range_x, range_y, range_z);
-    let points = read_e57(POINT_CLOUD_PATH.to_owned()).unwrap();
+    let points = random_points();
     camera.fit_points(&points);
 
     let state = State {
         camera,
+        file_path: "./data/union_station.e57".to_owned(),
         initial_points: points.clone(),
         points,
         image: ImageBuffer::new(width as u32, height as u32),
         movement_speed: 5.0,
         noise: Perlin::new(),
-        noise_scale: 0.01,
+        noise_scale: 0.0,
         wind_strength: 0.2,
         spring_constant: 0.002,
     };
@@ -197,6 +200,27 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
 
             ui.label("movement_speed:");
             ui.add(egui::Slider::new(&mut state.movement_speed, 1.0..=50.0));
+
+            ui.label("E57 path:");
+            ui.text_edit_singleline(&mut state.file_path);
+
+            let update = ui.button("Load file").clicked();
+            if update {
+                // Get the points from the E57 file if possible
+                let points = if state.file_path.is_empty() {
+                    random_points()
+                } else {
+                    match read_e57(&state.file_path) {
+                        Ok(points) => points,
+                        Err(_) => random_points(),
+                    }
+                };
+
+                // Update the camera and points
+                camera.fit_points(&points);
+                state.initial_points = points.clone();
+                state.points = points;
+            }
         });
 }
 

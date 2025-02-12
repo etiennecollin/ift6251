@@ -34,7 +34,7 @@ pub fn generate_random_point_cloud(
     points
 }
 
-pub fn read_e57(path: String) -> Result<Vec<Point>, &'static str> {
+pub fn read_e57(path: &str) -> Result<Vec<Point>, &'static str> {
     // Open E57 input file for reading
     let mut file = match E57Reader::from_file(path) {
         Ok(file) => file,
