@@ -2,6 +2,7 @@ use std::cell::Ref;
 
 use nannou::{
     image::{self, ImageBuffer},
+    noise::{NoiseFn, Perlin},
     prelude::*,
 };
 use nannou_egui::{
@@ -9,10 +10,11 @@ use nannou_egui::{
     Egui, FrameCtx,
 };
 use point_cloud_renderer::{
-    camera::{Camera, CameraReferenceFrame},
+    camera::{Camera, CameraReferenceFrame, Direction},
     point::Point,
-    render::{read_e57, render_image},
+    render::{generate_random_point_cloud, read_e57, render_image},
 };
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use wgpu::WithDeviceQueuePair;
 
 const POINT_CLOUD_PATH: &str = "./data/union_station.e57";
@@ -23,9 +25,14 @@ fn main() {
 
 struct State {
     camera: Camera,
+    initial_points: Vec<Point>,
     points: Vec<Point>,
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
     movement_speed: f64,
+    noise: Perlin,
+    noise_scale: f64,
+    wind_strength: f64,
+    spring_constant: f64,
 }
 
 struct Model {
@@ -67,9 +74,14 @@ fn model(app: &App) -> Model {
 
     let state = State {
         camera,
+        initial_points: points.clone(),
         points,
         image: ImageBuffer::new(width as u32, height as u32),
         movement_speed: 5.0,
+        noise: Perlin::new(),
+        noise_scale: 0.01,
+        wind_strength: 0.2,
+        spring_constant: 0.002,
     };
 
     let egui = Egui::from_window(&window);
@@ -77,50 +89,16 @@ fn model(app: &App) -> Model {
     Model { egui, state }
 }
 
-fn update_egui(ctx: FrameCtx, state: &mut State) {
-    let camera = &mut state.camera;
-    // Generate the settings window
-    egui::Window::new("Settings")
-        .default_width(0.0)
-        .show(&ctx, |ui| {
-            ui.label("x:");
-            let mut x = camera.reference_frame.position.x;
-            ui.add(egui::Slider::new(&mut x, -1000.0..=1000.0));
-            camera.reference_frame.update_position_x(x);
-
-            ui.label("y:");
-            let mut y = camera.reference_frame.position.y;
-            ui.add(egui::Slider::new(&mut y, -1000.0..=1000.0));
-            camera.reference_frame.update_position_y(y);
-
-            ui.label("z:");
-            let mut z = camera.reference_frame.position.z;
-            ui.add(egui::Slider::new(&mut z, -1000.0..=1000.0));
-            camera.reference_frame.update_position_z(z);
-
-            ui.separator();
-
-            ui.label("fov:");
-            ui.add(egui::Slider::new(&mut camera.fov, 1.0..=180.0));
-
-            ui.label("screen_distance:");
-            ui.add(egui::Slider::new(&mut camera.screen_distance, 1.0..=10.0));
-
-            ui.separator();
-
-            ui.label("movement_speed:");
-            ui.add(egui::Slider::new(&mut state.movement_speed, 1.0..=50.0));
-        });
-}
-
 fn update(_app: &App, model: &mut Model, update: Update) {
     let egui = &mut model.egui;
     let state = &mut model.state;
+    let time = update.since_start.secs();
 
     egui.set_elapsed_time(update.since_start);
     let ctx = egui.begin_frame();
     update_egui(ctx, state);
 
+    flow(state, time);
     let image = render_image(&state.camera, &state.points);
     let resolution = state.camera.screen.resolution;
     let image = nannou::image::ImageBuffer::from_raw(
@@ -132,59 +110,40 @@ fn update(_app: &App, model: &mut Model, update: Update) {
     state.image = image;
 }
 
-fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event::WindowEvent) {
-    // Let egui handle things like keyboard and mouse input.
-    model.egui.handle_raw_event(event);
-}
+fn flow(state: &mut State, time: f64) {
+    let noise = &mut state.noise;
+    let points = &mut state.points;
+    let initial_points = &state.initial_points; // Use the initial positions
+    let scale = state.noise_scale;
+    let wind_strength = state.wind_strength;
+    let spring_constant = state.spring_constant;
 
-fn key_pressed(app: &App, model: &mut Model, key: Key) {
-    let state = &mut model.state;
-    match key {
-        Key::Q => app.quit(),
-        Key::Up => {
-            let current_z = state.camera.reference_frame.position.z;
-            state
-                .camera
-                .reference_frame
-                .update_position_z(current_z + state.movement_speed);
-        }
-        Key::Down => {
-            let current_z = state.camera.reference_frame.position.z;
-            state
-                .camera
-                .reference_frame
-                .update_position_z(current_z - state.movement_speed);
-        }
-        Key::Left => {
-            let current_x = state.camera.reference_frame.position.x;
-            state
-                .camera
-                .reference_frame
-                .update_position_x(current_x - state.movement_speed);
-        }
-        Key::Right => {
-            let current_x = state.camera.reference_frame.position.x;
-            state
-                .camera
-                .reference_frame
-                .update_position_x(current_x + state.movement_speed);
-        }
-        Key::Period => {
-            let current_y = state.camera.reference_frame.position.y;
-            state
-                .camera
-                .reference_frame
-                .update_position_y(current_y + state.movement_speed);
-        }
-        Key::Comma => {
-            let current_y = state.camera.reference_frame.position.y;
-            state
-                .camera
-                .reference_frame
-                .update_position_y(current_y - state.movement_speed);
-        }
-        _other_key => {}
-    }
+    points.par_iter_mut().enumerate().for_each(|(i, point)| {
+        let initial_position = &initial_points[i].position; // Get the original position of the point
+        let x = point.position.x;
+        let y = point.position.y;
+        let z = point.position.z;
+
+        // Simulate wind-like vector field using noise or another function
+        let wind_x = noise.get([x * scale, y * scale, z * scale, time * scale]);
+        let wind_y = noise.get([y * scale, z * scale, x * scale, time * scale]);
+        let wind_z = noise.get([z * scale, x * scale, y * scale, time * scale]);
+
+        // Apply wind force to the point's position
+        point.position.x += wind_strength * wind_x;
+        point.position.y += wind_strength * wind_y;
+        point.position.z += wind_strength * wind_z;
+
+        // Calculate the distance from the original position
+        let displacement_x = point.position.x - initial_position.x;
+        let displacement_y = point.position.y - initial_position.y;
+        let displacement_z = point.position.z - initial_position.z;
+
+        // Apply the spring-like restorative force
+        point.position.x -= spring_constant * displacement_x;
+        point.position.y -= spring_constant * displacement_y;
+        point.position.z -= spring_constant * displacement_z;
+    });
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
@@ -213,4 +172,117 @@ fn create_texture(
     window.with_device_queue_pair(|device, queue| {
         wgpu::Texture::load_from_image_buffer(device, queue, usage, &image)
     })
+}
+
+fn update_egui(ctx: FrameCtx, state: &mut State) {
+    let camera = &mut state.camera;
+    // Generate the settings window
+    egui::Window::new("Settings")
+        .default_width(0.0)
+        .show(&ctx, |ui| {
+            ui.label("fov:");
+            ui.add(egui::Slider::new(&mut camera.fov, 1.0..=180.0));
+
+            ui.label("screen_distance:");
+            ui.add(egui::Slider::new(&mut camera.screen_distance, 1.0..=10.0));
+
+            ui.label("noise_scale:");
+            ui.add(egui::Slider::new(&mut state.noise_scale, 0.0..=0.1));
+
+            ui.label("wind_strength:");
+            ui.add(egui::Slider::new(&mut state.wind_strength, 0.0..=0.5));
+
+            ui.label("spring_constant:");
+            ui.add(egui::Slider::new(&mut state.spring_constant, 0.0..=0.5));
+
+            ui.label("movement_speed:");
+            ui.add(egui::Slider::new(&mut state.movement_speed, 1.0..=50.0));
+        });
+}
+
+fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event::WindowEvent) {
+    // Let egui handle things like keyboard and mouse input.
+    model.egui.handle_raw_event(event);
+}
+
+fn key_pressed(app: &App, model: &mut Model, key: Key) {
+    let state = &mut model.state;
+    let distance = state.movement_speed;
+    match key {
+        Key::X => app.quit(),
+        Key::Up => {
+            state
+                .camera
+                .reference_frame
+                .move_position(distance, Direction::Forward);
+        }
+        Key::Down => {
+            state
+                .camera
+                .reference_frame
+                .move_position(distance, Direction::Backward);
+        }
+        Key::Left => {
+            state
+                .camera
+                .reference_frame
+                .move_position(distance, Direction::Left);
+        }
+        Key::Right => {
+            state
+                .camera
+                .reference_frame
+                .move_position(distance, Direction::Right);
+        }
+        Key::Period => {
+            state
+                .camera
+                .reference_frame
+                .move_position(distance, Direction::Up);
+        }
+        Key::Comma => {
+            state
+                .camera
+                .reference_frame
+                .move_position(distance, Direction::Down);
+        }
+
+        Key::W => {
+            state
+                .camera
+                .reference_frame
+                .move_target(distance, Direction::Forward);
+        }
+        Key::R => {
+            state
+                .camera
+                .reference_frame
+                .move_target(distance, Direction::Backward);
+        }
+        Key::A => {
+            state
+                .camera
+                .reference_frame
+                .move_target(distance, Direction::Left);
+        }
+        Key::S => {
+            state
+                .camera
+                .reference_frame
+                .move_target(distance, Direction::Right);
+        }
+        Key::F => {
+            state
+                .camera
+                .reference_frame
+                .move_target(distance, Direction::Up);
+        }
+        Key::Q => {
+            state
+                .camera
+                .reference_frame
+                .move_target(distance, Direction::Down);
+        }
+        _other_key => {}
+    }
 }

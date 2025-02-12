@@ -3,6 +3,16 @@ use rand::{rng, Rng};
 
 use crate::{point::Point, screen::Screen};
 
+/// Defines the direction the camera can move in
+pub enum Direction {
+    Forward,
+    Backward,
+    Right,
+    Left,
+    Up,
+    Down,
+}
+
 /// A camera reference frame with position, direction, up and right vectors
 pub struct CameraReferenceFrame {
     /// The position of the camera
@@ -58,6 +68,32 @@ impl CameraReferenceFrame {
     /// Compute the direction the camera is looking at
     pub fn look_direction(&self) -> Vector3<f64> {
         (self.target - self.position).normalize()
+    }
+
+    /// Move the camera position in a given direction
+    pub fn move_position(&mut self, distance: f64, direction: Direction) {
+        self.position += match direction {
+            Direction::Forward => self.look_direction() * distance,
+            Direction::Backward => -self.look_direction() * distance,
+            Direction::Right => self.right * distance,
+            Direction::Left => -self.right * distance,
+            Direction::Up => self.up * distance,
+            Direction::Down => -self.up * distance,
+        };
+        self.look_at(self.target);
+    }
+
+    /// Move the camera target in a given direction
+    pub fn move_target(&mut self, distance: f64, direction: Direction) {
+        self.target += match direction {
+            Direction::Forward => Vector3::z() * distance,
+            Direction::Backward => -Vector3::z() * distance,
+            Direction::Right => Vector3::x() * distance,
+            Direction::Left => -Vector3::x() * distance,
+            Direction::Up => Vector3::y() * distance,
+            Direction::Down => -Vector3::y() * distance,
+        };
+        self.look_at(self.target);
     }
 }
 

@@ -2,6 +2,7 @@ use nalgebra::Point3;
 
 use crate::PixelType;
 
+#[derive(Clone)]
 pub struct Point {
     pub position: Point3<f64>,
     pub color: PixelType,
