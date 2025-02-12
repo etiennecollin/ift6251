@@ -71,7 +71,7 @@ pub fn read_e57(path: String) -> Result<Vec<Point>, &'static str> {
                 // We use the Z-up coordinate system,
                 // so we swap the Y and Z coordinates
                 if let CartesianCoordinate::Valid { x, y, z } = p.cartesian {
-                    point.position.x = x;
+                    point.position.x = -x;
                     point.position.y = z;
                     point.position.z = y;
                 } else {
