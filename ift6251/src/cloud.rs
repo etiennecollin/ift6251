@@ -199,7 +199,7 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
             ui.add(egui::Slider::new(&mut state.spring_constant, 0.0..=0.5));
 
             ui.label("movement_speed:");
-            ui.add(egui::Slider::new(&mut state.movement_speed, 1.0..=50.0));
+            ui.add(egui::Slider::new(&mut state.movement_speed, 0.01..=50.0));
 
             ui.label("E57 path:");
             ui.text_edit_singleline(&mut state.file_path);
