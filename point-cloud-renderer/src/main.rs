@@ -1,4 +1,4 @@
-use raytracer::{
+use point_cloud_renderer::{
     camera::{Camera, CameraReferenceFrame},
     render::{generate_random_point_cloud, render_image},
 };
@@ -8,7 +8,7 @@ pub fn main() {
     let reference_frame = CameraReferenceFrame::default();
 
     // Create the camera
-    let camera = Camera::new(reference_frame, 120.0, 1.0, (800, 450));
+    let mut camera = Camera::new(reference_frame, 120.0, 1.0, (800, 450));
 
     // Generate a random point cloud
     let range_x = (-100.0, 10.0);
@@ -17,7 +17,7 @@ pub fn main() {
     let points = generate_random_point_cloud(50000, range_x, range_y, range_z);
 
     // Fit the camera to the point cloud
-    // camera.fit_points(&points);
+    camera.fit_points(&points);
 
     // Render the image
     let image = render_image(&camera, &points);
