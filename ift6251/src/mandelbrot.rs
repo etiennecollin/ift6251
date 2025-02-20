@@ -3,7 +3,7 @@ use std::{cell::Ref, sync::Mutex, time::SystemTime};
 use indicatif::{ProgressBar, ProgressStyle};
 use lib::{
     images::{equalize, recalibrate},
-    mandelbrot::{is_in_mandelbrot, shift, zoom},
+    mandelbrot::{get_shift_speed, is_in_mandelbrot, shift, zoom},
 };
 use nannou::{
     color::{encoding::Srgb, IntoColor},
@@ -40,7 +40,7 @@ struct State {
     x_range: (f64, f64),
     y_range: (f64, f64),
     zoom_speed: f64,
-    shift_speed: f64,
+    shift_speed: u32,
     max_iterations: usize,
     select_in_mandelbrot: bool,
     plot_trajectory: bool,
@@ -78,7 +78,7 @@ fn model(app: &App) -> Model {
         x_range: (-2.0, 0.50),
         y_range: (-1.25, 1.25),
         zoom_speed: 0.001,
-        shift_speed: 0.1,
+        shift_speed: 100,
         max_iterations: 100,
         select_in_mandelbrot: false,
         plot_trajectory: false,
@@ -111,7 +111,7 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
             ui.add(egui::Slider::new(&mut state.zoom_speed, 0.0001..=0.1));
 
             ui.label("Shift speed:");
-            ui.add(egui::Slider::new(&mut state.shift_speed, 0.0001..=0.1));
+            ui.add(egui::Slider::new(&mut state.shift_speed, 10..=100));
 
             ui.separator();
 
@@ -175,19 +175,23 @@ fn key_pressed(app: &App, model: &mut Model, key: Key) {
     let state = &mut model.state;
     match key {
         Key::Left => {
-            state.x_range = shift(state.x_range, -state.shift_speed);
+            let shift_x = get_shift_speed(state.x_range, state.shift_speed);
+            state.x_range = shift(state.x_range, -shift_x);
             state.redraw = true;
         }
         Key::Right => {
-            state.x_range = shift(state.x_range, state.shift_speed);
+            let shift_x = get_shift_speed(state.x_range, state.shift_speed);
+            state.x_range = shift(state.x_range, shift_x);
             state.redraw = true;
         }
         Key::Up => {
-            state.y_range = shift(state.y_range, -state.shift_speed);
+            let shift_y = get_shift_speed(state.y_range, state.shift_speed);
+            state.y_range = shift(state.y_range, -shift_y);
             state.redraw = true;
         }
         Key::Down => {
-            state.y_range = shift(state.y_range, state.shift_speed);
+            let shift_y = get_shift_speed(state.y_range, state.shift_speed);
+            state.y_range = shift(state.y_range, shift_y);
             state.redraw = true;
         }
         Key::Plus | Key::Equals => {
