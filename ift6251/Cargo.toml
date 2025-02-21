@@ -1,7 +1,7 @@
 [package]
 name = "ift6251"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "A collection of projects created as part of the IFT6251 course at Université de Montréal."
 authors = ["etiennecollin <collin.etienne.contact@gmail.com>"]
 license = "MIT"
