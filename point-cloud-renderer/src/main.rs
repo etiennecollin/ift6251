@@ -24,4 +24,5 @@ pub fn main() {
 
     // Save the image as a PNG file
     image.save("point_cloud.png").unwrap();
+    println!("Image saved as 'point_cloud.png'");
 }
