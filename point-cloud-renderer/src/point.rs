@@ -4,22 +4,22 @@ use crate::PixelType;
 
 #[derive(Clone)]
 pub struct Point {
-    pub position: Point3<f64>,
+    pub position: Point3<f32>,
     pub color: PixelType,
 }
 
 impl Point {
-    pub fn new(position: Point3<f64>, color: PixelType) -> Self {
+    pub fn new(position: Point3<f32>, color: PixelType) -> Self {
         Self { position, color }
     }
 
-    pub fn bounding_box(points: &[Self]) -> (Point3<f64>, Point3<f64>) {
-        let mut min_x = f64::INFINITY;
-        let mut max_x = f64::NEG_INFINITY;
-        let mut min_y = f64::INFINITY;
-        let mut max_y = f64::NEG_INFINITY;
-        let mut min_z = f64::INFINITY;
-        let mut max_z = f64::NEG_INFINITY;
+    pub fn bounding_box(points: &[Self]) -> (Point3<f32>, Point3<f32>) {
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+        let mut min_z = f32::INFINITY;
+        let mut max_z = f32::NEG_INFINITY;
 
         // Find the bounding box of the point cloud
         points.iter().for_each(|point| {

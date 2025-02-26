@@ -4,14 +4,14 @@ use nalgebra::Point3;
 use rand::Rng;
 use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 
-use crate::{camera::Camera, point::Point, ImageType, PixelType};
+use crate::{ImageType, PixelType, camera::Camera, point::Point};
 
 /// Generates a random point cloud with the given number of points.
 pub fn generate_random_point_cloud(
     num_points: usize,
-    range_x: (f64, f64),
-    range_y: (f64, f64),
-    range_z: (f64, f64),
+    range_x: (f32, f32),
+    range_y: (f32, f32),
+    range_z: (f32, f32),
 ) -> Vec<Point> {
     let mut rng = rand::rng();
     let mut points = Vec::with_capacity(num_points);
@@ -71,9 +71,9 @@ pub fn read_e57(path: &str) -> Result<Vec<Point>, &'static str> {
                 // We use the Z-up coordinate system,
                 // so we swap the Y and Z coordinates
                 if let CartesianCoordinate::Valid { x, y, z } = p.cartesian {
-                    point.position.x = -x;
-                    point.position.y = z;
-                    point.position.z = y;
+                    point.position.x = -x as f32;
+                    point.position.y = z as f32;
+                    point.position.z = y as f32;
                 } else {
                     return None;
                 }
@@ -105,7 +105,7 @@ pub fn render_image(camera: &Camera, points: &[Point]) -> ImageType {
 
     // Image and 2D depth buffer
     let mut image = ImageType::new(width as u32, height as u32);
-    let mut depth_buffer = vec![vec![f64::INFINITY; width]; height];
+    let mut depth_buffer = vec![vec![f32::INFINITY; width]; height];
 
     // Parallelize the rendering process
     let collision_list: Vec<_> = points

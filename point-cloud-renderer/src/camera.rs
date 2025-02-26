@@ -1,5 +1,5 @@
 use nalgebra::{Point3, Vector3};
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 
 use crate::{point::Point, screen::Screen};
 
@@ -16,62 +16,62 @@ pub enum Direction {
 /// A camera reference frame with position, direction, up and right vectors
 pub struct CameraReferenceFrame {
     /// The position of the camera
-    pub position: Point3<f64>,
+    pub position: Point3<f32>,
     /// The target point the camera is looking at
-    pub target: Point3<f64>,
+    pub target: Point3<f32>,
     /// The up vector of the camera
-    pub up: Vector3<f64>,
+    pub up: Vector3<f32>,
     /// The right vector of the camera
-    pub right: Vector3<f64>,
+    pub right: Vector3<f32>,
 }
 
 impl CameraReferenceFrame {
     /// Set the position of the camera
-    pub fn with_position(mut self, position: Point3<f64>) -> Self {
+    pub fn with_position(mut self, position: Point3<f32>) -> Self {
         self.position = position;
         self
     }
 
     /// Set the direction the camera is looking at
-    pub fn with_up(mut self, up: Vector3<f64>) -> Self {
+    pub fn with_up(mut self, up: Vector3<f32>) -> Self {
         self.up = up.normalize();
         self
     }
 
     /// Set the target point the camera is looking at
-    pub fn with_target(mut self, target: Point3<f64>) -> Self {
+    pub fn with_target(mut self, target: Point3<f32>) -> Self {
         self.target = target;
         self
     }
 
     /// Look at a target point from the camera position
-    pub fn look_at(&mut self, target: Point3<f64>) {
+    pub fn look_at(&mut self, target: Point3<f32>) {
         self.target = target;
         self.right = self.look_direction().cross(&self.up).normalize();
     }
 
-    pub fn update_position_x(&mut self, x: f64) {
+    pub fn update_position_x(&mut self, x: f32) {
         self.position.x = x;
         self.look_at(self.target);
     }
 
-    pub fn update_position_y(&mut self, y: f64) {
+    pub fn update_position_y(&mut self, y: f32) {
         self.position.y = y;
         self.look_at(self.target);
     }
 
-    pub fn update_position_z(&mut self, z: f64) {
+    pub fn update_position_z(&mut self, z: f32) {
         self.position.z = z;
         self.look_at(self.target);
     }
 
     /// Compute the direction the camera is looking at
-    pub fn look_direction(&self) -> Vector3<f64> {
+    pub fn look_direction(&self) -> Vector3<f32> {
         (self.target - self.position).normalize()
     }
 
     /// Move the camera position in a given direction
-    pub fn move_position(&mut self, distance: f64, direction: Direction) {
+    pub fn move_position(&mut self, distance: f32, direction: Direction) {
         self.position += match direction {
             Direction::Forward => self.look_direction() * distance,
             Direction::Backward => -self.look_direction() * distance,
@@ -84,7 +84,7 @@ impl CameraReferenceFrame {
     }
 
     /// Move the camera target in a given direction
-    pub fn move_target(&mut self, distance: f64, direction: Direction) {
+    pub fn move_target(&mut self, distance: f32, direction: Direction) {
         self.target += match direction {
             Direction::Forward => Vector3::z() * distance,
             Direction::Backward => -Vector3::z() * distance,
@@ -113,11 +113,11 @@ pub struct Camera {
     /// The reference frame of the camera
     pub reference_frame: CameraReferenceFrame,
     /// The horizontal field of view in degrees
-    pub fov: f64,
+    pub fov: f32,
     /// The aspect ratio of the screen
-    pub aspect_ratio: f64,
+    pub aspect_ratio: f32,
     /// The distance from the camera to the screen
-    pub screen_distance: f64,
+    pub screen_distance: f32,
     /// The screen of the camera
     pub screen: Screen,
 }
@@ -126,12 +126,12 @@ impl Camera {
     /// Create a new camera with a reference frame and configuration
     pub fn new(
         reference_frame: CameraReferenceFrame,
-        fov: f64,
-        screen_distance: f64,
+        fov: f32,
+        screen_distance: f32,
         screen_resolution: (usize, usize),
     ) -> Self {
         let screen = Screen::new(screen_resolution);
-        let aspect_ratio = screen_resolution.0 as f64 / screen_resolution.1 as f64;
+        let aspect_ratio = screen_resolution.0 as f32 / screen_resolution.1 as f32;
         Self {
             reference_frame,
             fov,
@@ -170,7 +170,8 @@ impl Camera {
     }
 
     /// Intersect a point in 3D space with the screen and return the pixel coordinates
-    pub fn intersect_screen(&self, point: &Point) -> Option<(f64, (usize, usize))> {
+    #[inline]
+    pub fn intersect_screen(&self, point: &Point) -> Option<(f32, (usize, usize))> {
         // Direction from camera to the point in world space
         let ray_direction = (point.position - self.reference_frame.position).normalize();
         let look_direction = self.reference_frame.look_direction();
@@ -211,9 +212,9 @@ impl Camera {
     pub fn intersect_screen_dof(
         &self,
         point: &Point,
-        aperture_size: f64,
+        aperture_size: f32,
         samples: usize,
-    ) -> Option<(f64, (usize, usize))> {
+    ) -> Option<(f32, (usize, usize))> {
         let mut rng = rng();
         let mut pixel_sum = (0.0, 0.0);
         let mut valid_samples = 0;
@@ -226,8 +227,8 @@ impl Camera {
 
         for _ in 0..samples {
             // Generate random offsets within the aperture size
-            let jitter_x: f64 = rng.random_range(-aperture_size..aperture_size);
-            let jitter_y: f64 = rng.random_range(-aperture_size..aperture_size);
+            let jitter_x: f32 = rng.random_range(-aperture_size..aperture_size);
+            let jitter_y: f32 = rng.random_range(-aperture_size..aperture_size);
 
             // Jittered camera position
             let jittered_position = self.reference_frame.position
@@ -259,8 +260,8 @@ impl Camera {
 
             // Convert to pixel coordinates
             if let Some((px, py)) = self.screen.to_pixel_coords(normalized_x, normalized_y) {
-                pixel_sum.0 += px as f64;
-                pixel_sum.1 += py as f64;
+                pixel_sum.0 += px as f32;
+                pixel_sum.1 += py as f32;
                 distance_sum += distance;
                 valid_samples += 1;
             }
@@ -268,9 +269,9 @@ impl Camera {
 
         // Average the results to simulate blur
         if valid_samples > 0 {
-            let avg_x = (pixel_sum.0 / valid_samples as f64).round() as usize;
-            let avg_y = (pixel_sum.1 / valid_samples as f64).round() as usize;
-            let avg_distance = distance_sum / valid_samples as f64;
+            let avg_x = (pixel_sum.0 / valid_samples as f32).round() as usize;
+            let avg_y = (pixel_sum.1 / valid_samples as f32).round() as usize;
+            let avg_distance = distance_sum / valid_samples as f32;
             Some((avg_distance, (avg_x, avg_y)))
         } else {
             None

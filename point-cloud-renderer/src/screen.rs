@@ -18,7 +18,7 @@ impl Screen {
 
     /// Computes the physical screen dimensions based on FOV, aspect ratio and distance from the
     /// camera
-    pub fn dimensions(&self, fov: f64, aspect_ratio: f64, distance: f64) -> (f64, f64) {
+    pub fn dimensions(&self, fov: f32, aspect_ratio: f32, distance: f32) -> (f32, f32) {
         let fov_rad = fov.to_radians();
         let screen_width = 2.0 * (fov_rad / 2.0).tan() * distance;
         let screen_height = screen_width / aspect_ratio;
@@ -26,11 +26,11 @@ impl Screen {
     }
 
     /// Converts normalized 2D point on the screen (-1 to 1) into pixel coordinates
-    pub fn to_pixel_coords(&self, normalized_x: f64, normalized_y: f64) -> Option<(usize, usize)> {
+    pub fn to_pixel_coords(&self, normalized_x: f32, normalized_y: f32) -> Option<(usize, usize)> {
         let (width, height) = self.resolution;
 
-        let pixel_x = ((normalized_x + 1.0) * 0.5 * (width as f64)) as usize;
-        let pixel_y = ((1.0 - normalized_y) * 0.5 * (height as f64)) as usize;
+        let pixel_x = ((normalized_x + 1.0) * 0.5 * (width as f32)) as usize;
+        let pixel_y = ((1.0 - normalized_y) * 0.5 * (height as f32)) as usize;
 
         // Ensure coordinates are within bounds
         if pixel_x < width && pixel_y < height {
