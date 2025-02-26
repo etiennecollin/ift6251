@@ -1,6 +1,7 @@
 use point_cloud_renderer::{
     camera::{Camera, CameraReferenceFrame},
-    render::{generate_random_point_cloud, render_image},
+    loader::generate_random_point_cloud,
+    render::render_image,
 };
 
 pub fn main() {

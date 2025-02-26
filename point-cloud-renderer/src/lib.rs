@@ -1,6 +1,7 @@
 use image::{ImageBuffer, Rgba};
 
 pub mod camera;
+pub mod loader;
 pub mod point;
 pub mod render;
 pub mod scene;

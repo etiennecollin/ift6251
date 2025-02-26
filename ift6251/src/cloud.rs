@@ -3,9 +3,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use fastnoise_lite::{FastNoiseLite, NoiseType};
 use nannou::{
     image::{self, ImageBuffer},
-    noise::{NoiseFn, Perlin},
     prelude::*,
 };
 use nannou_audio::{Buffer, Host, Stream};
@@ -15,8 +15,9 @@ use nannou_egui::{
 };
 use point_cloud_renderer::{
     camera::{Camera, CameraReferenceFrame, Direction},
+    loader::{generate_random_point_cloud, read_e57},
     point::Point,
-    render::{generate_random_point_cloud, read_e57, render_image},
+    render::render_image,
 };
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
@@ -37,8 +38,8 @@ struct State {
     points: Vec<Point>,
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
     movement_speed: f32,
-    noise: Perlin,
-    noise_scale: f64,
+    noise: FastNoiseLite,
+    noise_scale: f32,
     wind_strength: f32,
     spring_constant: f32,
     // This will be accessed by the audio thread.
@@ -117,6 +118,10 @@ fn model(app: &App) -> Model {
     let points = random_points();
     camera.fit_points(&points);
 
+    // Create noise
+    let mut noise = FastNoiseLite::new();
+    noise.set_noise_type(Some(NoiseType::Perlin));
+
     let state = State {
         camera,
         file_path: "./data/union_station.e57".to_owned(),
@@ -124,7 +129,7 @@ fn model(app: &App) -> Model {
         points,
         image: ImageBuffer::new(width as u32, height as u32),
         movement_speed: 5.0,
-        noise: Perlin::new(),
+        noise,
         noise_scale: 0.0,
         wind_strength: 0.2,
         spring_constant: 0.002,
@@ -195,7 +200,7 @@ fn audio(audio: &mut Audio, buffer: &mut Buffer) {
 
     // Compute the sum of the magnitudes
     let magnitude = match spectrum {
-        Some(s) => s.data().par_iter().map(|f| f.1.val()).sum::<f32>().min(1.0),
+        Some(s) => s.data().par_iter().map(|f| f.1.val()).sum::<f32>().max(1.0),
         None => 1.0,
     };
 
@@ -217,7 +222,7 @@ fn update(_app: &App, model: &mut Model, update: Update) {
 
     // Get the audio strength
     let audio_strength = *state.fft_output.lock().unwrap();
-    flow(state, time, audio_strength);
+    flow(state, time as f32, audio_strength);
 
     // Render the image
     let image = render_image(&state.camera, &state.points);
@@ -233,12 +238,12 @@ fn update(_app: &App, model: &mut Model, update: Update) {
     state.image = image;
 }
 
-#[inline]
-fn flow(state: &mut State, time: f64, audio_strength: f32) {
+fn flow(state: &mut State, time: f32, audio_strength: f32) {
     let noise = &mut state.noise;
     let points = &mut state.points;
     let initial_points = &state.initial_points; // Use the initial positions
     let scale = state.noise_scale;
+    let scaled_time = time * scale;
     let wind_strength = state.wind_strength * audio_strength;
     let spring_constant = state.spring_constant;
 
@@ -248,19 +253,19 @@ fn flow(state: &mut State, time: f64, audio_strength: f32) {
 
     points.par_iter_mut().enumerate().for_each(|(i, point)| {
         let initial_position = initial_points[i].position; // Get the original position of the point
-        let x = point.position.x as f64;
-        let y = point.position.y as f64;
-        let z = point.position.z as f64;
+        let x = point.position.x * scale;
+        let y = point.position.y * scale;
+        let z = point.position.z * scale;
 
         // Simulate wind-like vector field using noise or another function
-        let wind_x = noise.get([x * scale, y * scale, z * scale, time * scale]);
-        let wind_y = noise.get([y * scale, z * scale, x * scale, time * scale]);
-        let wind_z = noise.get([z * scale, x * scale, y * scale, time * scale]);
+        let wind_x = noise.get_noise_3d(x, y, scaled_time);
+        let wind_y = noise.get_noise_3d(y, z, scaled_time);
+        let wind_z = noise.get_noise_3d(z, x, scaled_time);
 
         // Apply wind force to the point's position
-        point.position.x += wind_strength * wind_x as f32;
-        point.position.y += wind_strength * wind_y as f32;
-        point.position.z += wind_strength * wind_z as f32;
+        point.position.x += wind_x * wind_strength;
+        point.position.y += wind_y * wind_strength;
+        point.position.z += wind_z * wind_strength;
 
         // Calculate the distance from the original position
         let displacement = point.position - initial_position;
