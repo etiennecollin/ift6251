@@ -82,7 +82,7 @@ fn model(app: &App) -> Model {
     // Initialise the state that we want to live on the audio thread.
     let audio_host = Host::new();
     let volume = Arc::new(Mutex::new(0.0));
-    let fft_output = Arc::new(Mutex::new(0.0));
+    let fft_output = Arc::new(Mutex::new(1.0));
     let audio_model = Audio {
         sounds: vec![],
         fft_output: Arc::clone(&fft_output),
@@ -95,13 +95,18 @@ fn model(app: &App) -> Model {
         .render(audio)
         .build()
         .unwrap();
-    let sound = audrey::open(AUDIO_PATH).expect("Failed to load sound");
-    stream
-        .send(move |audio| {
-            audio.sounds.push(sound);
-        })
-        .ok();
-    stream.play().unwrap();
+
+    // Load the audio file if possible
+    if let Ok(sound) = audrey::open(AUDIO_PATH) {
+        stream
+            .send(move |audio| {
+                audio.sounds.push(sound);
+            })
+            .ok();
+        stream.play().unwrap();
+    } else {
+        eprintln!("Failed to load audio file");
+    };
 
     // Define camera position and orientation
     let reference_frame = CameraReferenceFrame::default();
