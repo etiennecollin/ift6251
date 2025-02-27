@@ -113,11 +113,17 @@ pub struct Camera {
     /// The reference frame of the camera
     pub reference_frame: CameraReferenceFrame,
     /// The horizontal field of view in degrees
-    pub fov: f32,
+    fov: f32,
+    /// The horizontal field of view in radians
+    fov_rad: f32,
     /// The aspect ratio of the screen
     pub aspect_ratio: f32,
     /// The distance from the camera to the screen
     pub screen_distance: f32,
+    /// The width of the screen
+    pub screen_width: f32,
+    /// The height of the screen
+    pub screen_height: f32,
     /// The screen of the camera
     pub screen: Screen,
 }
@@ -132,13 +138,33 @@ impl Camera {
     ) -> Self {
         let screen = Screen::new(screen_resolution);
         let aspect_ratio = screen_resolution.0 as f32 / screen_resolution.1 as f32;
-        Self {
+        let mut camera = Self {
             reference_frame,
-            fov,
+            fov: 0.0,
+            fov_rad: 0.0,
             aspect_ratio,
             screen_distance,
+            screen_width: 0.0,
+            screen_height: 0.0,
             screen,
-        }
+        };
+        camera.update_fov(fov);
+        camera
+    }
+
+    /// Recalculate screen dimensions based on the latest FOV and screen distance
+    ///
+    /// The fov is in degrees
+    pub fn update_fov(&mut self, fov: f32) {
+        self.fov = fov;
+        self.fov_rad = fov.to_radians();
+        self.screen_width = 2.0 * (self.fov_rad / 2.0).tan() * self.screen_distance;
+        self.screen_height = self.screen_width / self.aspect_ratio;
+    }
+
+    /// Return the field of view of the camera in degrees
+    pub fn fov(&self) -> f32 {
+        self.fov
     }
 
     /// Given a point cloud, choose the proper camera position and direction to fit all points
@@ -154,10 +180,10 @@ impl Camera {
         let center = min + Vector3::new(width / 2.0, height / 2.0, depth / 2.0);
 
         // Compute the distance required to fit the entire point cloud in x and y
-        let angle_x = self.fov / 2.0;
-        let distance_x = width / angle_x.to_radians().tan();
+        let angle_x = self.fov_rad / 2.0;
+        let distance_x = width / angle_x.tan();
         let angle_y = angle_x / self.aspect_ratio;
-        let distance_y = height / angle_y.to_radians().tan();
+        let distance_y = height / angle_y.tan();
 
         // Choose the maximum distance to fit the entire point cloud
         let distance = distance_x.max(distance_y);
@@ -182,11 +208,6 @@ impl Camera {
             return None;
         }
 
-        // Recalculate screen dimensions based on the latest FOV and screen distance
-        let fov_rad = self.fov.to_radians();
-        let screen_width = 2.0 * (fov_rad / 2.0).tan() * self.screen_distance;
-        let screen_height = screen_width / self.aspect_ratio;
-
         // Compute the distance from the camera to the screen along the camera's view direction
         let distance = self.screen_distance / alignment;
 
@@ -199,8 +220,9 @@ impl Camera {
         // Calculate relative coordinates on the screen
         let relative_position = intersection - screen_origin;
         let normalized_x =
-            relative_position.dot(&self.reference_frame.right) / (screen_width / 2.0);
-        let normalized_y = relative_position.dot(&self.reference_frame.up) / (screen_height / 2.0);
+            (relative_position.dot(&self.reference_frame.right) * 2.0) / self.screen_width;
+        let normalized_y =
+            (relative_position.dot(&self.reference_frame.up) * 2.0) / self.screen_height;
 
         // Convert the normalized device coordinates to pixel coordinates
         self.screen
@@ -219,11 +241,6 @@ impl Camera {
         let mut pixel_sum = (0.0, 0.0);
         let mut valid_samples = 0;
         let mut distance_sum = 0.0;
-
-        // Recalculate screen dimensions based on the latest FOV
-        let fov_rad = self.fov.to_radians();
-        let screen_width = 2.0 * (fov_rad / 2.0).tan() * self.screen_distance;
-        let screen_height = screen_width / self.aspect_ratio;
 
         for _ in 0..samples {
             // Generate random offsets within the aperture size
@@ -254,9 +271,9 @@ impl Camera {
             let relative_position = intersection - screen_origin;
 
             let normalized_x =
-                relative_position.dot(&self.reference_frame.right) / (screen_width / 2.0);
+                relative_position.dot(&self.reference_frame.right) / (self.screen_width / 2.0);
             let normalized_y =
-                relative_position.dot(&self.reference_frame.up) / (screen_height / 2.0);
+                relative_position.dot(&self.reference_frame.up) / (self.screen_height / 2.0);
 
             // Convert to pixel coordinates
             if let Some((px, py)) = self.screen.to_pixel_coords(normalized_x, normalized_y) {

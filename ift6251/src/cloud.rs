@@ -3,9 +3,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use fastnoise_lite::{FastNoiseLite, NoiseType};
 use nannou::{
     image::{self, ImageBuffer},
+    noise::{NoiseFn, Perlin},
     prelude::*,
 };
 use nannou_audio::{Buffer, Host, Stream};
@@ -38,7 +38,7 @@ struct State {
     points: Vec<Point>,
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
     movement_speed: f32,
-    noise: FastNoiseLite,
+    noise: Perlin,
     noise_scale: f32,
     wind_strength: f32,
     spring_constant: f32,
@@ -124,8 +124,7 @@ fn model(app: &App) -> Model {
     camera.fit_points(&points);
 
     // Create noise
-    let mut noise = FastNoiseLite::new();
-    noise.set_noise_type(Some(NoiseType::Perlin));
+    let noise = Perlin::new();
 
     let state = State {
         camera,
@@ -210,9 +209,7 @@ fn audio(audio: &mut Audio, buffer: &mut Buffer) {
     };
 
     // Update the audio strength value
-    {
-        *audio.fft_output.lock().unwrap() = magnitude;
-    }
+    *audio.fft_output.lock().unwrap() = magnitude;
 }
 
 fn update(_app: &App, model: &mut Model, update: Update) {
@@ -227,7 +224,7 @@ fn update(_app: &App, model: &mut Model, update: Update) {
 
     // Get the audio strength
     let audio_strength = *state.fft_output.lock().unwrap();
-    flow(state, time as f32, audio_strength);
+    flow(state, time, audio_strength);
 
     // Render the image
     let image = render_image(&state.camera, &state.points);
@@ -243,11 +240,11 @@ fn update(_app: &App, model: &mut Model, update: Update) {
     state.image = image;
 }
 
-fn flow(state: &mut State, time: f32, audio_strength: f32) {
+fn flow(state: &mut State, time: f64, audio_strength: f32) {
     let noise = &mut state.noise;
     let points = &mut state.points;
     let initial_points = &state.initial_points; // Use the initial positions
-    let scale = state.noise_scale;
+    let scale = state.noise_scale as f64;
     let scaled_time = time * scale;
     let wind_strength = state.wind_strength * audio_strength;
     let spring_constant = state.spring_constant;
@@ -258,19 +255,17 @@ fn flow(state: &mut State, time: f32, audio_strength: f32) {
 
     points.par_iter_mut().enumerate().for_each(|(i, point)| {
         let initial_position = initial_points[i].position; // Get the original position of the point
-        let x = point.position.x * scale;
-        let y = point.position.y * scale;
-        let z = point.position.z * scale;
+        let x = point.position.x as f64 * scale;
+        let y = point.position.y as f64 * scale;
+        let z = point.position.z as f64 * scale;
 
         // Simulate wind-like vector field using noise or another function
-        let wind_x = noise.get_noise_3d(x, y, scaled_time);
-        let wind_y = noise.get_noise_3d(y, z, scaled_time);
-        let wind_z = noise.get_noise_3d(z, x, scaled_time);
+        let wind = noise.get([x, y, z, scaled_time]) as f32 * wind_strength;
 
         // Apply wind force to the point's position
-        point.position.x += wind_x * wind_strength;
-        point.position.y += wind_y * wind_strength;
-        point.position.z += wind_z * wind_strength;
+        point.position.x += wind;
+        point.position.y += wind;
+        point.position.z += wind;
 
         // Calculate the distance from the original position
         let displacement = point.position - initial_position;
@@ -315,7 +310,12 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
         .default_width(0.0)
         .show(&ctx, |ui| {
             ui.label("fov:");
-            ui.add(egui::Slider::new(&mut camera.fov, 1.0..=180.0));
+            let mut fov = camera.fov();
+            ui.add(egui::Slider::new(&mut fov, 1.0..=180.0));
+
+            if fov != camera.fov() {
+                camera.update_fov(fov);
+            }
 
             ui.label("screen_distance:");
             ui.add(egui::Slider::new(&mut camera.screen_distance, 1.0..=10.0));
