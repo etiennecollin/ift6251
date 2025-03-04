@@ -22,6 +22,10 @@ Here is the URL to the course repo: https://github.com/rethread-studio/algorithm
     - [Interaction](#interaction-3)
     - [Running](#running-3)
     - [Next Steps](#next-steps)
+  - [cloud](#cloud)
+    - [Interaction](#interaction-4)
+    - [Running](#running-4)
+    - [Next Steps](#next-steps-1)
 
 <!-- vim-markdown-toc -->
 
@@ -40,6 +44,7 @@ cargo run --release --bin <bin-name>
 where `<bin-name>` is one of:
 
 - `birds`
+- `cloud`
 - `mandelbrot`
 - `particles`
 - `triangles`
@@ -158,10 +163,48 @@ cargo run --release --bin mandelbrot
 
 The next step would be to write a shader to compute the mandelbrot set for the screen. Right now, the render is only real-time for a low iteration count and low sub-pixel count. Computing the set on the GPU would make the code a lot faster.
 
-<!-- ## Resources -->
-<!---->
-<!-- - GitHub -->
-<!--   - https://github.com/stars/etiennecollin/lists/ift6251 -->
-<!-- - Videos -->
-<!--   - [A collection of WASM demos](https://cliffle.com/p/web-demos/) -->
-<!--   - [A WASM tutorial](https://www.youtube.com/watch?v=K63uBfs1K7Y) -->
+### cloud
+
+|                                |                                |
+| :----------------------------: | :----------------------------: |
+| ![cloud](./assets/cloud_1.png) | ![cloud](./assets/cloud_2.png) |
+| ![cloud](./assets/cloud_3.png) | ![cloud](./assets/cloud_4.png) |
+
+This experiment is a **point cloud renderer** that utilizes techniques inspired by ray tracing to visualize 3D point clouds on a screen. The simulation introduces **destructive forces** through a Perlin noise wind, which can dynamically **sync with the bass of an audio track**. This synchronization is achieved by computing the **FFT** (Fast Fourier Transform) of the audio buffer in real-time and extracting the amplitude of frequencies below 80Hz. That amplitude multiplies the intensity of the wind.
+
+The noise wind influences the point cloud’s structure, but a **spring-like restorative force** counteracts the displacement. This force is determined by the distance between a point’s displaced position and its original location, causing the cloud to behave similarly to a tree swaying in the wind.
+
+Point clouds can be imported from an `e57` scan, a widely used format for 3D scanning. On iPhones, the _3d Scanner App_ can be used to generate such scans. Otherwise, multiple sites provide `e57` scans for free, such as the "Union Station" scan by _Trimble Inc_ available on [SketchUp](https://help.sketchup.com/en/scan-essentials-sketchup/sample-point-cloud-data)
+
+#### Interaction
+
+The application supports keyboard controls for navigating the camera and adjusting its target. The following keys are available for interaction:
+
+- **Navigation (Moves the camera's position):**
+  - `Up Arrow (↑)`: Move forward
+  - `Down Arrow (↓)`: Move backward
+  - `Left Arrow (←)`: Move left
+  - `Right Arrow (→)`: Move right
+  - `Period (.)`: Move up
+  - `Comma (,)`: Move down
+- **Target Adjustment (Moves the camera's focal point):**
+  - `W`: Move target forward
+  - `S`: Move target backward
+  - `A`: Move target left
+  - `D`: Move target right
+  - `E`: Move target up
+  - `Q`: Move target down
+- **Exit Application:**
+  - `X`: Quit the application
+
+#### Running
+
+You may run the experiment using the following command:
+
+```bash
+cargo run --release --bin cloud
+```
+
+#### Next Steps
+
+The next step would be to write compute shaders to render the point cloud and to use rasterisation techniques to make the render faster and less CPU intensive.

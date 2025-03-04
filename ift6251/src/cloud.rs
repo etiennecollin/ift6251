@@ -408,7 +408,7 @@ fn key_pressed(app: &App, model: &mut Model, key: Key) {
                 .reference_frame
                 .move_target(distance, Direction::Forward);
         }
-        Key::R => {
+        Key::S => {
             state
                 .camera
                 .reference_frame
@@ -420,13 +420,13 @@ fn key_pressed(app: &App, model: &mut Model, key: Key) {
                 .reference_frame
                 .move_target(distance, Direction::Left);
         }
-        Key::S => {
+        Key::D => {
             state
                 .camera
                 .reference_frame
                 .move_target(distance, Direction::Right);
         }
-        Key::F => {
+        Key::E => {
             state
                 .camera
                 .reference_frame
