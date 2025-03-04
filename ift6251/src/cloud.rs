@@ -25,15 +25,14 @@ use rayon::iter::{
 use spectrum_analyzer::{FrequencyLimit, samples_fft_to_spectrum, windows::hann_window};
 use wgpu::WithDeviceQueuePair;
 
-const AUDIO_PATH: &str = "./data/audio.wav";
-
 fn main() {
     nannou::app(model).update(update).run()
 }
 
 struct State {
     camera: Camera,
-    file_path: String,
+    cloud_file_path: String,
+    audio_file_path: String,
     initial_points: Vec<Point>,
     points: Vec<Point>,
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
@@ -56,7 +55,7 @@ struct Audio {
 struct Model {
     egui: Egui,
     state: State,
-    _stream: Stream<Audio>,
+    stream: Stream<Audio>,
 }
 
 fn random_points() -> Vec<Point> {
@@ -96,18 +95,6 @@ fn model(app: &App) -> Model {
         .build()
         .unwrap();
 
-    // Load the audio file if possible
-    if let Ok(sound) = audrey::open(AUDIO_PATH) {
-        stream
-            .send(move |audio| {
-                audio.sounds.push(sound);
-            })
-            .ok();
-        stream.play().unwrap();
-    } else {
-        eprintln!("Failed to load audio file");
-    };
-
     // Define camera position and orientation
     let reference_frame = CameraReferenceFrame::default();
 
@@ -128,7 +115,8 @@ fn model(app: &App) -> Model {
 
     let state = State {
         camera,
-        file_path: "./data/union_station.e57".to_owned(),
+        cloud_file_path: "./data/union_station.e57".to_owned(),
+        audio_file_path: "./data/audio.wav".to_owned(),
         initial_points: points.clone(),
         points,
         image: ImageBuffer::new(width as u32, height as u32),
@@ -148,7 +136,7 @@ fn model(app: &App) -> Model {
     Model {
         egui,
         state,
-        _stream: stream,
+        stream,
     }
 }
 
@@ -220,7 +208,7 @@ fn update(_app: &App, model: &mut Model, update: Update) {
     // Update GUI
     egui.set_elapsed_time(update.since_start);
     let ctx = egui.begin_frame();
-    update_egui(ctx, state);
+    update_egui(ctx, state, &mut model.stream);
 
     // Get the audio strength
     let audio_strength = *state.fft_output.lock().unwrap();
@@ -303,7 +291,7 @@ pub fn create_texture(
     })
 }
 
-fn update_egui(ctx: FrameCtx, state: &mut State) {
+fn update_egui(ctx: FrameCtx, state: &mut State, stream: &mut Stream<Audio>) {
     let camera = &mut state.camera;
     // Generate the settings window
     egui::Window::new("Settings")
@@ -333,15 +321,15 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
             ui.add(egui::Slider::new(&mut state.movement_speed, 0.01..=50.0));
 
             ui.label("E57 path:");
-            ui.text_edit_singleline(&mut state.file_path);
+            ui.text_edit_singleline(&mut state.cloud_file_path);
 
-            let update = ui.button("Load file").clicked();
-            if update {
+            let load_cloud = ui.button("Load file").clicked();
+            if load_cloud {
                 // Get the points from the E57 file if possible
-                let points = if state.file_path.is_empty() {
+                let points = if state.cloud_file_path.is_empty() {
                     random_points()
                 } else {
-                    match read_e57(&state.file_path) {
+                    match read_e57(&state.cloud_file_path) {
                         Ok(points) => points,
                         Err(_) => random_points(),
                     }
@@ -351,6 +339,24 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
                 camera.fit_points(&points);
                 state.initial_points = points.clone();
                 state.points = points;
+            }
+
+            ui.label("Audio path:");
+            ui.text_edit_singleline(&mut state.audio_file_path);
+
+            let load_audio = ui.button("Load file").clicked();
+            if load_audio {
+                // Load the audio file if possible
+                if let Ok(sound) = audrey::open(state.audio_file_path.clone()) {
+                    stream
+                        .send(move |audio| {
+                            audio.sounds.push(sound);
+                        })
+                        .ok();
+                    stream.play().unwrap();
+                } else {
+                    eprintln!("Failed to load audio file");
+                };
             }
         });
 }
