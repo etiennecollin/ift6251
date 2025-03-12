@@ -1,8 +1,6 @@
-use std::{
-    cell::Ref,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
+use ift6251::utils::images::create_texture;
 use nannou::{
     image::{self, ImageBuffer},
     noise::{NoiseFn, Perlin},
@@ -23,7 +21,6 @@ use rayon::iter::{
     IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
 use spectrum_analyzer::{FrequencyLimit, samples_fft_to_spectrum, windows::hann_window};
-use wgpu::WithDeviceQueuePair;
 
 fn main() {
     nannou::app(model).update(update).run()
@@ -275,20 +272,6 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     draw.to_frame(app, &frame).unwrap();
     model.egui.draw_to_frame(&frame).unwrap();
-}
-
-pub fn create_texture(
-    window: Ref<'_, Window>,
-    image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-) -> wgpu::Texture {
-    let usage = nannou::wgpu::TextureUsages::COPY_SRC
-        | nannou::wgpu::TextureUsages::COPY_DST
-        | nannou::wgpu::TextureUsages::RENDER_ATTACHMENT
-        | nannou::wgpu::TextureUsages::TEXTURE_BINDING;
-
-    window.with_device_queue_pair(|device, queue| {
-        wgpu::Texture::load_from_image_buffer(device, queue, usage, &image)
-    })
 }
 
 fn update_egui(ctx: FrameCtx, state: &mut State, stream: &mut Stream<Audio>) {

@@ -1,22 +1,21 @@
-use std::{cell::Ref, sync::Mutex, time::SystemTime};
+use std::{sync::Mutex, time::SystemTime};
 
-use indicatif::{ProgressBar, ProgressStyle};
-use lib::{
-    images::{equalize, recalibrate},
+use ift6251::utils::{
+    images::{create_texture, equalize, recalibrate},
     mandelbrot::{get_shift_speed, is_in_mandelbrot, shift, zoom},
 };
+use indicatif::{ProgressBar, ProgressStyle};
 use nannou::{
-    color::{encoding::Srgb, IntoColor},
+    color::{IntoColor, encoding::Srgb},
     image::{self, ImageBuffer, RgbaImage},
     noise::{NoiseFn, Perlin},
     prelude::*,
 };
 use nannou_egui::{
-    egui::{self},
     Egui, FrameCtx,
+    egui::{self},
 };
 use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
-use wgpu::WithDeviceQueuePair;
 
 fn get_save_path() -> String {
     let time = SystemTime::now()
@@ -237,20 +236,6 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     draw.to_frame(app, &frame).unwrap();
     model.egui.draw_to_frame(&frame).unwrap();
-}
-
-fn create_texture(
-    window: Ref<'_, Window>,
-    image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-) -> wgpu::Texture {
-    let usage = nannou::wgpu::TextureUsages::COPY_SRC
-        | nannou::wgpu::TextureUsages::COPY_DST
-        | nannou::wgpu::TextureUsages::RENDER_ATTACHMENT
-        | nannou::wgpu::TextureUsages::TEXTURE_BINDING;
-
-    window.with_device_queue_pair(|device, queue| {
-        wgpu::Texture::load_from_image_buffer(device, queue, usage, &image)
-    })
 }
 
 fn compute_mandelbrot_array(width: usize, height: usize, state: &State) -> Vec<Vec<f64>> {

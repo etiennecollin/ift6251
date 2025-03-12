@@ -1,9 +1,0 @@
-[package]
-name = "lib"
-version = "0.1.0"
-edition = "2024"
-description = "A few utilities used for the IFT6251 projects."
-authors = ["etiennecollin <collin.etienne.contact@gmail.com>"]
-license = "MIT"
-
-[dependencies]
