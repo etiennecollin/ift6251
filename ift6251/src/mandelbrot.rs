@@ -93,6 +93,7 @@ fn model(app: &App) -> Model {
 
     Model { egui, state }
 }
+
 fn update_egui(ctx: FrameCtx, state: &mut State) {
     // Generate the settings window
     egui::Window::new("Settings")
@@ -146,6 +147,7 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
             }
         });
 }
+
 fn update(app: &App, model: &mut Model, update: Update) {
     let egui = &mut model.egui;
     let state = &mut model.state;
