@@ -1,7 +1,6 @@
-struct CameraTransforms {
-    world: mat4x4<f32>,
-    view: mat4x4<f32>,
-    proj: mat4x4<f32>,
+struct VertexInput {
+    @location(0) position: vec3<f32>, // <x, y, z>
+    @location(1) color: vec4<f32>, // <r, g, b, a>
 };
 
 struct Data {
@@ -11,31 +10,25 @@ struct Data {
     spring_constant: f32,
 };
 
-struct Point {
-    @location(0) position: vec3<f32>, // <x, y, z>
-    @location(1) color: vec4<f32>, // <r, g, b, a>
-};
-
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>, // <x, y, z, w>
-    @location(0) color: vec4<f32>, // <r, g, b, a>
-}
-
 @group(0) @binding(0)
-var<uniform> camera: CameraTransforms;
+var<storage, read_write> vertices: array<VertexInput>;
+
 @group(0) @binding(1)
+var<storage, read> vertices_initial: array<VertexInput>;
+
+@group(0) @binding(2)
 var<uniform> data: Data;
 
-// TODO: Set to read_write
-@group(0) @binding(2)
-var<storage, read> current_positions: array<vec3<f32>>; // <x, y, z>
+@compute @workgroup_size(256)
+fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let index = id.x;
 
-@vertex
-fn vs_main(
-    @builtin(vertex_index) idx: u32,
-    point: Point,
-) -> VertexOutput {
-    var current_position = current_positions[idx];
+    // Prevent out-of-bounds access
+    if index >= arrayLength(&vertices) {
+        return;
+    }
+
+    var current_position = vertices[index].position;
 
     // Simulate wind-like vector field using noise
     let wind = perlin_noise_3d(current_position * data.noise_scale) * data.wind_strength * data.sound_amplitude;
@@ -44,26 +37,13 @@ fn vs_main(
     current_position += wind;
 
     // Calculate the distance from the original position
-    let displacement = current_position - point.position;
+    let displacement = current_position - vertices_initial[index].position;
 
     // Apply the spring-like restorative force
     current_position -= data.spring_constant * displacement;
 
     // Update the vertex position
-    // current_positions[idx] = current_position;
-
-    // Compute the projected vertex position
-    var out: VertexOutput;
-    let worldview: mat4x4<f32> = camera.view * camera.world;
-    out.position = camera.proj * worldview * vec4<f32>(current_position, 1.0);
-    out.color = point.color;
-
-    return out;
-}
-
-@fragment
-fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
-    return vertex.color;
+    vertices[index].position = current_position;
 }
 
 fn permute4(x: vec4<f32>) -> vec4<f32> { return ((x * 34. + 1.) * x) % vec4<f32>(289.); }

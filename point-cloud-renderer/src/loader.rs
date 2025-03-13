@@ -21,11 +21,14 @@ pub fn generate_random_point_cloud(
             rng.random_range(range_z.0..range_z.1),
         ];
 
+        // Normalize the position to a 0-1 range and then to a 0-255 range
+        let normalize = |value, min, max| ((value - min) / (max - min) * 255.0) as u8;
+
         let color = [
-            rng.random_range(0..=255),
-            rng.random_range(0..=255),
-            rng.random_range(0..=255),
-            255,
+            normalize(position[0], range_x.0, range_x.1), // Red based on x
+            normalize(position[1], range_y.0, range_y.1), // Green based on y
+            normalize(position[2], range_z.0, range_z.1), // Blue based on z
+            255,                                          // Alpha channel
         ];
 
         points.push(Point::new(position, color));

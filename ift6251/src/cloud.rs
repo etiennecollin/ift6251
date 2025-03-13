@@ -3,26 +3,19 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use nannou::{
-    noise::{NoiseFn, Perlin},
-    prelude::*,
-    state::keys,
-    winit,
-};
+use nannou::{prelude::*, state::keys, winit};
 use nannou_audio::{Buffer, Host, Stream};
 use nannou_egui::{
     Egui,
     egui::{self},
 };
 use point_cloud_renderer::{
-    camera::{Camera, Direction},
+    camera::{Camera, CameraConfig, Direction},
     loader::{generate_random_point_cloud, read_e57},
     pipeline::GPUPipeline,
     point::{CloudData, Point},
 };
-use rayon::iter::{
-    IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
-};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spectrum_analyzer::{FrequencyLimit, samples_fft_to_spectrum, windows::hann_window};
 
 fn main() {
@@ -34,7 +27,6 @@ struct State {
     audio_file_path: String,
     movement_speed: f64,
     mouse_sensitivity: f32,
-    noise: Perlin,
     cloud_data: CloudData,
     // This will be accessed by the audio thread.
     _volume: Arc<Mutex<f32>>,
@@ -53,7 +45,6 @@ struct Model {
     state: State,
     audio_stream: Stream<Audio>,
     shader_pipeline: RefCell<GPUPipeline>,
-    update_points: bool,
     update_camera: RefCell<bool>,
     update_cloud_data: RefCell<bool>,
     camera_is_active: bool,
@@ -67,15 +58,28 @@ fn random_points() -> Vec<Point> {
 }
 
 fn model(app: &App) -> Model {
+    // Set GPU device descriptor
+    let descriptor = wgpu::DeviceDescriptor {
+        label: Some("Point Cloud Renderer Device"),
+        features: wgpu::Features::default(),
+        limits: wgpu::Limits {
+            max_storage_buffer_binding_size: 2 << 30,
+            ..Default::default()
+        },
+    };
+
+    // Create a new window
     let window_id = app
         .new_window()
         .fullscreen()
         .view(view)
         .raw_event(raw_window_event)
         .key_pressed(key_pressed)
+        .device_descriptor(descriptor)
         .build()
         .unwrap();
     let window = app.window(window_id).unwrap();
+    let (window_width, window_height) = window.inner_size_pixels();
 
     // Get control of the cursor
     let camera_is_active = true;
@@ -101,10 +105,11 @@ fn model(app: &App) -> Model {
         .build()
         .unwrap();
 
-    // Create noise
-    let noise = Perlin::new();
-
     // Generate a random point cloud
+    // let points = match read_e57("./data/union_station.e57") {
+    //     Ok(points) => points,
+    //     Err(_) => random_points(),
+    // };
     let points = random_points();
 
     // Create the state
@@ -119,7 +124,6 @@ fn model(app: &App) -> Model {
         audio_file_path: "./data/audio.wav".to_owned(),
         movement_speed: 0.5,
         mouse_sensitivity: 0.003,
-        noise,
         cloud_data,
         // This will be accessed by the audio thread.
         _volume: volume,
@@ -128,10 +132,11 @@ fn model(app: &App) -> Model {
 
     // Create the camera
     let eye = Point3::new(0.0, 0.0, 1.0);
-    let camera = Camera::new(eye);
+    let camera_config = CameraConfig::default().with_aspect_ratio(window_width, window_height);
+    let camera = Camera::new(eye, camera_config);
 
     // Initialise the shader pipeline
-    let shader_pipeline = RefCell::new(GPUPipeline::new(&window, &points, cloud_data, camera));
+    let shader_pipeline = RefCell::new(GPUPipeline::new(&window, &points, camera, cloud_data));
 
     // Create the GUI
     let egui = Egui::from_window(&window);
@@ -142,7 +147,6 @@ fn model(app: &App) -> Model {
         state,
         audio_stream,
         shader_pipeline,
-        update_points: false,
         update_camera: RefCell::new(false),
         update_cloud_data: RefCell::new(false),
         camera_is_active,
@@ -241,86 +245,59 @@ fn update(app: &App, model: &mut Model, update: Update) {
     update_egui(model, window.device());
 
     // Get the audio strength
-    let audio_strength = *model.state.fft_output.lock().unwrap();
-    model.state.cloud_data.sound_amplitude = audio_strength;
-    *model.update_cloud_data.borrow_mut() = true;
-    // flow(&mut model.state, time, audio_strength);
+    let sound_amplitude = *model.state.fft_output.lock().unwrap();
+    // Check if the sound amplitude has changed
+    if model.state.cloud_data.sound_amplitude != sound_amplitude {
+        model.state.cloud_data.sound_amplitude = sound_amplitude;
+        *model.update_cloud_data.borrow_mut() = true;
+    }
 
     // Update the camera position
     if model.camera_is_active {
         let mut pipeline = model.shader_pipeline.borrow_mut();
         let velocity = (update.since_last.secs() * model.state.movement_speed) as f32;
-        update_camera_position(pipeline.camera_mut(), velocity, &app.keys.down);
-        *model.update_camera.borrow_mut() = true;
+
+        // Update camera and update the model if the camera has moved
+        if update_camera_position(pipeline.camera_mut(), velocity, &app.keys.down) {
+            *model.update_camera.borrow_mut() = true;
+        }
     }
 }
 
-// fn flow(state: &mut State, time: f64, audio_strength: f32) {
-//     let noise = &mut state.noise;
-//     let points = &mut state.points;
-//     let initial_points = &state.initial_points; // Use the initial positions
-//     let scale = state.noise_scale as f64;
-//     let scaled_time = time * scale;
-//     let wind_strength = state.wind_strength * audio_strength;
-//     let spring_constant = state.spring_constant;
-//
-//     if wind_strength == 0.0 && spring_constant == 0.0 {
-//         return;
-//     }
-//
-//     points.par_iter_mut().enumerate().for_each(|(i, point)| {
-//         let initial_position = initial_points[i].position; // Get the original position of the point
-//         let x = point.position[0] as f64 * scale;
-//         let y = point.position[1] as f64 * scale;
-//         let z = point.position[2] as f64 * scale;
-//
-//         // Simulate wind-like vector field using noise or another function
-//         let wind = noise.get([x, y, z, scaled_time]) as f32 * wind_strength;
-//
-//         // Apply wind force to the point's position
-//         point.position[0] += wind;
-//         point.position[1] += wind;
-//         point.position[2] += wind;
-//
-//         // Calculate the distance from the original position
-//         let displacement = [
-//             point.position[0] - initial_position[0],
-//             point.position[1] - initial_position[1],
-//             point.position[2] - initial_position[2],
-//         ];
-//
-//         // Apply the spring-like restorative force
-//         point.position[0] -= spring_constant * displacement[0];
-//         point.position[1] -= spring_constant * displacement[1];
-//         point.position[2] -= spring_constant * displacement[2];
-//     });
-// }
-
-fn update_camera_position(camera: &mut Camera, velocity: f32, keys: &keys::Down) {
+fn update_camera_position(camera: &mut Camera, velocity: f32, keys: &keys::Down) -> bool {
+    let mut moved = false;
     // Go forwards on W.
     if keys.contains(&Key::W) {
         camera.move_towards(Direction::Forward, velocity);
+        moved = true;
     }
     // Go backwards on S.
     if keys.contains(&Key::R) {
         camera.move_towards(Direction::Backward, velocity);
+        moved = true;
     }
     // Strafe left on A.
     if keys.contains(&Key::A) {
         camera.move_towards(Direction::Left, velocity);
+        moved = true;
     }
     // Strafe right on D.
     if keys.contains(&Key::S) {
         camera.move_towards(Direction::Right, velocity);
+        moved = true;
     }
     // Float down on Q.
     if keys.contains(&Key::Q) {
         camera.move_towards(Direction::Down, velocity);
+        moved = true;
     }
     // Float up on E.
     if keys.contains(&Key::F) {
         camera.move_towards(Direction::Up, velocity);
+        moved = true;
     }
+
+    moved
 }
 
 fn update_egui(model: &mut Model, device: &wgpu::Device) {
@@ -353,6 +330,7 @@ fn update_egui(model: &mut Model, device: &wgpu::Device) {
                 0.0..=0.5,
             ));
 
+            // Check if the cloud data has changed
             if prev_noise_scale != state.cloud_data.noise_scale
                 || prev_wind_strength != state.cloud_data.wind_strength
                 || prev_spring_constant != state.cloud_data.spring_constant
@@ -388,7 +366,7 @@ fn update_egui(model: &mut Model, device: &wgpu::Device) {
                 model
                     .shader_pipeline
                     .borrow_mut()
-                    .new_cloud(device, &points);
+                    .new_point_cloud(device, &points);
             }
 
             ui.label("Audio path:");
@@ -449,6 +427,7 @@ fn event(_app: &App, model: &mut Model, event: Event) {
                 // Pitch up and down on mouse y axis movement.
                 _ => camera.update_pitch(delta),
             }
+            *model.update_camera.borrow_mut() = true;
         }
     }
 }

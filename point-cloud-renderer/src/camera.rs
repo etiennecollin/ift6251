@@ -18,6 +18,8 @@ pub struct Camera {
     pub pitch: f32,
     /// Rotation around the y axis in radians.
     pub yaw: f32,
+    /// The configuration for the camera.
+    pub config: CameraConfig,
 }
 
 impl Camera {
@@ -25,11 +27,12 @@ impl Camera {
     const MIN_PITCH: f32 = -Self::MAX_PITCH;
 
     /// Creates a new camera at the given position.
-    pub fn new(eye: Point3) -> Self {
+    pub fn new(eye: Point3, config: CameraConfig) -> Self {
         Self {
             position: eye,
             pitch: 0.0,
             yaw: std::f32::consts::PI * 0.5,
+            config,
         }
     }
 
@@ -96,21 +99,26 @@ impl Camera {
         };
         self.position += direction * amount;
     }
-}
 
-/// Contains the various transformations of a camera.
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct CameraTransforms {
-    pub world: Mat4,
-    pub view: Mat4,
-    pub proj: Mat4,
-}
+    /// The projection matrix for the camera.
+    pub fn projection(&self) -> Mat4 {
+        Mat4::perspective_rh_gl(
+            self.config.fov_y,
+            self.config.aspect_ratio,
+            self.config.near,
+            self.config.far,
+        )
+    }
 
-impl CameraTransforms {
-    /// Returns the struct as a byte slice.
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe { wgpu::bytes::from(self) }
+    /// The uniforms for the camera.
+    pub fn uniforms(&self) -> CameraTransforms {
+        let scale = Mat4::from_scale(Vec3::splat(0.01));
+
+        CameraTransforms {
+            world: self.config.rotation,
+            view: (self.view() * scale),
+            proj: self.projection(),
+        }
     }
 }
 
@@ -157,27 +165,26 @@ impl CameraConfig {
         self.far = far;
         self
     }
-
-    /// The projection matrix for the camera.
-    pub fn projection(&self) -> Mat4 {
-        Mat4::perspective_rh_gl(self.fov_y, self.aspect_ratio, self.near, self.far)
-    }
-
-    /// The uniforms for the camera.
-    pub fn uniforms(&self, view: Mat4) -> CameraTransforms {
-        let proj = self.projection();
-        let scale = Mat4::from_scale(Vec3::splat(0.01));
-
-        CameraTransforms {
-            world: self.rotation,
-            view: (view * scale).into(),
-            proj: proj.into(),
-        }
-    }
 }
 
 impl Default for CameraConfig {
     fn default() -> Self {
-        Self::new((800, 600), 120.0, (0.01, 100.0))
+        Self::new((800, 600), 120.0, (0.001, 100.0))
+    }
+}
+
+/// Contains the various transformations of a camera.
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct CameraTransforms {
+    pub world: Mat4,
+    pub view: Mat4,
+    pub proj: Mat4,
+}
+
+impl CameraTransforms {
+    /// Returns the struct as a byte slice.
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { wgpu::bytes::from(self) }
     }
 }
