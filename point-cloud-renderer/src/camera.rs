@@ -101,14 +101,14 @@ impl Camera {
 /// Contains the various transformations of a camera.
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-pub struct Uniforms {
+pub struct CameraTransforms {
     pub world: Mat4,
     pub view: Mat4,
     pub proj: Mat4,
 }
 
-impl Uniforms {
-    /// Returns the uniforms as a byte slice.
+impl CameraTransforms {
+    /// Returns the struct as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
         unsafe { wgpu::bytes::from(self) }
     }
@@ -164,11 +164,11 @@ impl CameraConfig {
     }
 
     /// The uniforms for the camera.
-    pub fn uniform(&self, view: Mat4) -> Uniforms {
+    pub fn uniforms(&self, view: Mat4) -> CameraTransforms {
         let proj = self.projection();
         let scale = Mat4::from_scale(Vec3::splat(0.01));
 
-        Uniforms {
+        CameraTransforms {
             world: self.rotation,
             view: (view * scale).into(),
             proj: proj.into(),

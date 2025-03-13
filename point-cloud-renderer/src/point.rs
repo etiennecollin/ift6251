@@ -79,3 +79,19 @@ impl Default for Point {
         }
     }
 }
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CloudData {
+    pub sound_amplitude: f32,
+    pub wind_strength: f32,
+    pub noise_scale: f32,
+    pub spring_constant: f32,
+}
+
+impl CloudData {
+    /// Returns the struct as a byte slice.
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { wgpu::bytes::from(self) }
+    }
+}

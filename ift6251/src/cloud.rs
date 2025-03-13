@@ -18,7 +18,7 @@ use point_cloud_renderer::{
     camera::{Camera, Direction},
     loader::{generate_random_point_cloud, read_e57},
     pipeline::GPUPipeline,
-    point::Point,
+    point::{CloudData, Point},
 };
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
@@ -32,14 +32,10 @@ fn main() {
 struct State {
     cloud_file_path: String,
     audio_file_path: String,
-    initial_points: Vec<Point>,
-    points: Vec<Point>,
     movement_speed: f64,
     mouse_sensitivity: f32,
     noise: Perlin,
-    noise_scale: f32,
-    wind_strength: f32,
-    spring_constant: f32,
+    cloud_data: CloudData,
     // This will be accessed by the audio thread.
     _volume: Arc<Mutex<f32>>,
     fft_output: Arc<Mutex<f32>>,
@@ -59,6 +55,7 @@ struct Model {
     shader_pipeline: RefCell<GPUPipeline>,
     update_points: bool,
     update_camera: RefCell<bool>,
+    update_cloud_data: RefCell<bool>,
     camera_is_active: bool,
 }
 
@@ -87,16 +84,6 @@ fn model(app: &App) -> Model {
     }
     window.set_cursor_visible(false);
 
-    // Generate a random point cloud
-    let points = random_points();
-
-    // Create the camera
-    let eye = Point3::new(0.0, 0.0, 1.0);
-    let camera = Camera::new(eye);
-
-    // Initialise the shader pipeline
-    let shader_pipeline = RefCell::new(GPUPipeline::new(&window, &points, camera));
-
     // Initialise the state that we want to live on the audio thread.
     let audio_host = Host::new();
     let volume = Arc::new(Mutex::new(0.0));
@@ -117,22 +104,34 @@ fn model(app: &App) -> Model {
     // Create noise
     let noise = Perlin::new();
 
+    // Generate a random point cloud
+    let points = random_points();
+
     // Create the state
+    let cloud_data = CloudData {
+        sound_amplitude: 1.0,
+        wind_strength: 0.2,
+        noise_scale: 0.0,
+        spring_constant: 0.002,
+    };
     let state = State {
         cloud_file_path: "./data/union_station.e57".to_owned(),
         audio_file_path: "./data/audio.wav".to_owned(),
-        initial_points: points.clone(),
-        points,
         movement_speed: 0.5,
         mouse_sensitivity: 0.003,
         noise,
-        noise_scale: 0.0,
-        wind_strength: 0.2,
-        spring_constant: 0.002,
+        cloud_data,
         // This will be accessed by the audio thread.
         _volume: volume,
         fft_output,
     };
+
+    // Create the camera
+    let eye = Point3::new(0.0, 0.0, 1.0);
+    let camera = Camera::new(eye);
+
+    // Initialise the shader pipeline
+    let shader_pipeline = RefCell::new(GPUPipeline::new(&window, &points, cloud_data, camera));
 
     // Create the GUI
     let egui = Egui::from_window(&window);
@@ -145,6 +144,7 @@ fn model(app: &App) -> Model {
         shader_pipeline,
         update_points: false,
         update_camera: RefCell::new(false),
+        update_cloud_data: RefCell::new(false),
         camera_is_active,
     }
 }
@@ -157,8 +157,15 @@ fn view(_app: &App, model: &Model, frame: Frame) {
         // Update the camera uniforms
         let device = frame.device_queue_pair().device();
         let encoder = &mut frame.command_encoder();
-        pipeline.update_uniforms(device, encoder);
+        pipeline.update_camera_transforms(device, encoder);
         *model.update_camera.borrow_mut() = false;
+    }
+
+    if *model.update_cloud_data.borrow() {
+        let device = frame.device_queue_pair().device();
+        let encoder = &mut frame.command_encoder();
+        pipeline.update_cloud_data(device, encoder, model.state.cloud_data);
+        *model.update_cloud_data.borrow_mut() = false;
     }
 
     pipeline.render(&frame);
@@ -210,7 +217,7 @@ fn audio(audio: &mut Audio, buffer: &mut Buffer) {
     let spectrum = samples_fft_to_spectrum(
         &hann_window,
         buffer.sample_rate(),
-        FrequencyLimit::All,
+        FrequencyLimit::Min(80.0),
         None,
     )
     .ok();
@@ -230,66 +237,64 @@ fn update(app: &App, model: &mut Model, update: Update) {
 
     // Update GUI
     model.egui.set_elapsed_time(update.since_start);
-    update_egui(model);
+    let window = app.window(model.window_id).unwrap();
+    update_egui(model, window.device());
 
     // Get the audio strength
     let audio_strength = *model.state.fft_output.lock().unwrap();
-    flow(&mut model.state, time, audio_strength);
-
-    // Update the points on the GPU
-    let window = app.window(model.window_id).unwrap();
-    let mut pipeline = model.shader_pipeline.borrow_mut();
-    pipeline.update_points(window.device(), &model.state.points);
-    model.update_points = false;
+    model.state.cloud_data.sound_amplitude = audio_strength;
+    *model.update_cloud_data.borrow_mut() = true;
+    // flow(&mut model.state, time, audio_strength);
 
     // Update the camera position
     if model.camera_is_active {
+        let mut pipeline = model.shader_pipeline.borrow_mut();
         let velocity = (update.since_last.secs() * model.state.movement_speed) as f32;
         update_camera_position(pipeline.camera_mut(), velocity, &app.keys.down);
         *model.update_camera.borrow_mut() = true;
     }
 }
 
-fn flow(state: &mut State, time: f64, audio_strength: f32) {
-    let noise = &mut state.noise;
-    let points = &mut state.points;
-    let initial_points = &state.initial_points; // Use the initial positions
-    let scale = state.noise_scale as f64;
-    let scaled_time = time * scale;
-    let wind_strength = state.wind_strength * audio_strength;
-    let spring_constant = state.spring_constant;
-
-    if wind_strength == 0.0 && spring_constant == 0.0 {
-        return;
-    }
-
-    points.par_iter_mut().enumerate().for_each(|(i, point)| {
-        let initial_position = initial_points[i].position; // Get the original position of the point
-        let x = point.position[0] as f64 * scale;
-        let y = point.position[1] as f64 * scale;
-        let z = point.position[2] as f64 * scale;
-
-        // Simulate wind-like vector field using noise or another function
-        let wind = noise.get([x, y, z, scaled_time]) as f32 * wind_strength;
-
-        // Apply wind force to the point's position
-        point.position[0] += wind;
-        point.position[1] += wind;
-        point.position[2] += wind;
-
-        // Calculate the distance from the original position
-        let displacement = [
-            point.position[0] - initial_position[0],
-            point.position[1] - initial_position[1],
-            point.position[2] - initial_position[2],
-        ];
-
-        // Apply the spring-like restorative force
-        point.position[0] -= spring_constant * displacement[0];
-        point.position[1] -= spring_constant * displacement[1];
-        point.position[2] -= spring_constant * displacement[2];
-    });
-}
+// fn flow(state: &mut State, time: f64, audio_strength: f32) {
+//     let noise = &mut state.noise;
+//     let points = &mut state.points;
+//     let initial_points = &state.initial_points; // Use the initial positions
+//     let scale = state.noise_scale as f64;
+//     let scaled_time = time * scale;
+//     let wind_strength = state.wind_strength * audio_strength;
+//     let spring_constant = state.spring_constant;
+//
+//     if wind_strength == 0.0 && spring_constant == 0.0 {
+//         return;
+//     }
+//
+//     points.par_iter_mut().enumerate().for_each(|(i, point)| {
+//         let initial_position = initial_points[i].position; // Get the original position of the point
+//         let x = point.position[0] as f64 * scale;
+//         let y = point.position[1] as f64 * scale;
+//         let z = point.position[2] as f64 * scale;
+//
+//         // Simulate wind-like vector field using noise or another function
+//         let wind = noise.get([x, y, z, scaled_time]) as f32 * wind_strength;
+//
+//         // Apply wind force to the point's position
+//         point.position[0] += wind;
+//         point.position[1] += wind;
+//         point.position[2] += wind;
+//
+//         // Calculate the distance from the original position
+//         let displacement = [
+//             point.position[0] - initial_position[0],
+//             point.position[1] - initial_position[1],
+//             point.position[2] - initial_position[2],
+//         ];
+//
+//         // Apply the spring-like restorative force
+//         point.position[0] -= spring_constant * displacement[0];
+//         point.position[1] -= spring_constant * displacement[1];
+//         point.position[2] -= spring_constant * displacement[2];
+//     });
+// }
 
 fn update_camera_position(camera: &mut Camera, velocity: f32, keys: &keys::Down) {
     // Go forwards on W.
@@ -318,7 +323,7 @@ fn update_camera_position(camera: &mut Camera, velocity: f32, keys: &keys::Down)
     }
 }
 
-fn update_egui(model: &mut Model) {
+fn update_egui(model: &mut Model, device: &wgpu::Device) {
     let ctx = model.egui.begin_frame();
     let state = &mut model.state;
     let audio_stream = &mut model.audio_stream;
@@ -327,14 +332,33 @@ fn update_egui(model: &mut Model) {
     egui::Window::new("Settings")
         .default_width(0.0)
         .show(&ctx, |ui| {
+            let prev_noise_scale = state.cloud_data.noise_scale;
             ui.label("noise_scale:");
-            ui.add(egui::Slider::new(&mut state.noise_scale, 0.0..=0.1));
+            ui.add(egui::Slider::new(
+                &mut state.cloud_data.noise_scale,
+                0.0..=0.1,
+            ));
 
+            let prev_wind_strength = state.cloud_data.wind_strength;
             ui.label("wind_strength:");
-            ui.add(egui::Slider::new(&mut state.wind_strength, 0.0..=0.5));
+            ui.add(egui::Slider::new(
+                &mut state.cloud_data.wind_strength,
+                0.0..=0.5,
+            ));
 
+            let prev_spring_constant = state.cloud_data.spring_constant;
             ui.label("spring_constant:");
-            ui.add(egui::Slider::new(&mut state.spring_constant, 0.0..=0.5));
+            ui.add(egui::Slider::new(
+                &mut state.cloud_data.spring_constant,
+                0.0..=0.5,
+            ));
+
+            if prev_noise_scale != state.cloud_data.noise_scale
+                || prev_wind_strength != state.cloud_data.wind_strength
+                || prev_spring_constant != state.cloud_data.spring_constant
+            {
+                *model.update_cloud_data.borrow_mut() = true;
+            }
 
             ui.label("movement_speed:");
             ui.add(egui::Slider::new(&mut state.movement_speed, 0.01..=1.0));
@@ -361,9 +385,10 @@ fn update_egui(model: &mut Model) {
                 };
 
                 // Update the camera and points
-                state.initial_points = points.clone();
-                state.points = points;
-                model.update_points = true;
+                model
+                    .shader_pipeline
+                    .borrow_mut()
+                    .new_cloud(device, &points);
             }
 
             ui.label("Audio path:");

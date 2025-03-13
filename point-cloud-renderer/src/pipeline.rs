@@ -1,12 +1,15 @@
 use nannou::prelude::*;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::camera::{Camera, CameraConfig, Uniforms};
-use crate::point::Point;
+use crate::camera::{Camera, CameraConfig, CameraTransforms};
+use crate::point::{CloudData, Point};
 
 pub struct GPUPipeline {
+    number_points: u32,
     vertex_buffer: wgpu::Buffer,
-    vertex_buffer_len: u32,
-    uniform_buffer: wgpu::Buffer,
+    camera_buffer: wgpu::Buffer,
+    cloud_data_buffer: wgpu::Buffer,
+    current_positions_buffer: wgpu::Buffer,
     depth_texture: wgpu::Texture,
     depth_texture_view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
@@ -18,21 +21,12 @@ pub struct GPUPipeline {
 impl GPUPipeline {
     const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-    pub fn new(window: &Window, points: &[Point], camera: Camera) -> Self {
+    pub fn new(window: &Window, points: &[Point], cloud_data: CloudData, camera: Camera) -> Self {
         let device = window.device();
         let msaa_samples = window.msaa_samples();
         let (window_width, window_height) = window.inner_size_pixels();
 
         let shader_mod = device.create_shader_module(wgpu::include_wgsl!("shaders/cloud.wgsl"));
-
-        // Create the vertex buffer
-        let vertices_bytes = Point::as_bytes(points);
-        let vertex_buffer_len = points.len() as u32;
-        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: vertices_bytes,
-            usage: wgpu::BufferUsages::VERTEX,
-        });
 
         // Create the depth buffer texture
         let depth_texture = create_depth_texture(
@@ -43,28 +37,43 @@ impl GPUPipeline {
         );
         let depth_texture_view = depth_texture.view().build();
 
-        // Create the uniform buffer (camera transforms)
+        // Create the vertex buffer
+        let (vertex_buffer, number_points) = create_vertex_buffer(device, points);
+
+        // Create the camera transforms buffer
         let camera_config = CameraConfig::default().with_aspect_ratio(window_width, window_height);
-        let uniforms = camera_config.uniform(camera.view());
-        let uniforms_bytes = uniforms.as_bytes();
-        let uniforms_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Camera Uniform Buffer"),
-            contents: uniforms_bytes,
+        let camera_uniforms = camera_config.uniforms(camera.view());
+        let camera_uniforms_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Camera Uniforms Buffer"),
+            contents: camera_uniforms.as_bytes(),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
+        // Create the Data storage buffer
+        let cloud_data_storage_buffer = create_cloud_data_buffer(device, cloud_data);
+        let (current_positions_storage_buffer, current_positions_storage_size) =
+            create_current_positions_buffer(device, points);
+
         // Create the uniforms bind group
-        let uniforms_bind_group_layout = wgpu::BindGroupLayoutBuilder::new()
+        let bind_group_layout = wgpu::BindGroupLayoutBuilder::new()
             .uniform_buffer(wgpu::ShaderStages::VERTEX, false)
+            .uniform_buffer(wgpu::ShaderStages::VERTEX, false)
+            .storage_buffer(wgpu::ShaderStages::VERTEX, false, true) // TODO: Set readonly to false
             .build(device);
-        let uniforms_bind_group = wgpu::BindGroupBuilder::new()
-            .buffer::<Uniforms>(&uniforms_buffer, 0..1)
-            .build(device, &uniforms_bind_group_layout);
+        let bind_group = wgpu::BindGroupBuilder::new()
+            .buffer::<CameraTransforms>(&camera_uniforms_buffer, 0..1)
+            .buffer::<CloudData>(&cloud_data_storage_buffer, 1..2)
+            .buffer_bytes(
+                &current_positions_storage_buffer,
+                0,
+                Some(current_positions_storage_size),
+            )
+            .build(device, &bind_group_layout);
 
         // Create the pipeline layout
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&uniforms_bind_group_layout],
+            bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -84,12 +93,14 @@ impl GPUPipeline {
                 .build(device);
 
         GPUPipeline {
+            number_points,
             vertex_buffer,
-            vertex_buffer_len,
-            uniform_buffer: uniforms_buffer,
+            camera_buffer: camera_uniforms_buffer,
+            cloud_data_buffer: cloud_data_storage_buffer,
+            current_positions_buffer: current_positions_storage_buffer,
             depth_texture,
             depth_texture_view,
-            bind_group: uniforms_bind_group,
+            bind_group,
             render_pipeline,
             camera,
             camera_config,
@@ -109,7 +120,7 @@ impl GPUPipeline {
             self.depth_texture =
                 create_depth_texture(device, frame_size, depth_format, sample_count);
             self.depth_texture_view = self.depth_texture.view().build();
-            self.update_uniforms(device, &mut encoder);
+            self.update_camera_transforms(device, &mut encoder);
         }
 
         // Record commands for rendering the frame.
@@ -121,41 +132,62 @@ impl GPUPipeline {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.draw(0..self.vertex_buffer_len, 0..1);
+        render_pass.draw(0..self.number_points, 0..1);
     }
 
-    pub fn update_uniforms(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
-        // Update the uniforms
-        let uniforms = self.camera_config.uniform(self.camera.view());
-        let uniforms_size = std::mem::size_of::<Uniforms>() as wgpu::BufferAddress;
-        let new_uniforms_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Camera Uniform Buffer"),
-            contents: uniforms.as_bytes(),
+    pub fn update_camera_transforms(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let camera_storage = self.camera_config.uniforms(self.camera.view());
+        let camera_storage_size = std::mem::size_of::<CameraTransforms>() as wgpu::BufferAddress;
+        let camera_storage_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Camera Uniforms Buffer"),
+            contents: camera_storage.as_bytes(),
             usage: wgpu::BufferUsages::COPY_SRC,
         });
 
         // Copy the new uniforms buffer to the uniform buffer.
         encoder.copy_buffer_to_buffer(
-            &new_uniforms_buffer,
+            &camera_storage_buffer,
             0,
-            &self.uniform_buffer,
+            &self.camera_buffer,
             0,
-            uniforms_size,
+            camera_storage_size,
         );
     }
 
-    pub fn update_points(&mut self, device: &wgpu::Device, points: &[Point]) {
-        // Update the vertex buffer with the new points.
-        let vertices_bytes = Point::as_bytes(points);
-        let vertex_buffer_len = points.len() as u32;
-        let new_vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: vertices_bytes,
-            usage: wgpu::BufferUsages::VERTEX,
+    pub fn update_cloud_data(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        cloud_data: CloudData,
+    ) {
+        let cloud_data_size = std::mem::size_of::<CloudData>() as wgpu::BufferAddress;
+        let cloud_data_storage_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Cloud Data Uniforms Buffer"),
+            contents: cloud_data.as_bytes(),
+            usage: wgpu::BufferUsages::COPY_SRC,
         });
 
-        self.vertex_buffer = new_vertex_buffer;
-        self.vertex_buffer_len = vertex_buffer_len;
+        // Copy the new uniforms buffer to the uniform buffer.
+        encoder.copy_buffer_to_buffer(
+            &cloud_data_storage_buffer,
+            0,
+            &self.cloud_data_buffer,
+            0,
+            cloud_data_size,
+        );
+    }
+
+    pub fn new_cloud(&mut self, device: &wgpu::Device, points: &[Point]) {
+        let (vertex_buffer, number_points) = create_vertex_buffer(device, points);
+        let (current_positions_storage_buffer, _) = create_current_positions_buffer(device, points);
+
+        self.vertex_buffer = vertex_buffer;
+        self.current_positions_buffer = current_positions_storage_buffer;
+        self.number_points = number_points;
     }
 
     pub fn camera_mut(&mut self) -> &mut Camera {
@@ -163,6 +195,47 @@ impl GPUPipeline {
     }
 }
 
+fn create_current_positions_buffer(
+    device: &wgpu::Device,
+    points: &[Point],
+) -> (wgpu::Buffer, wgpu::BufferSize) {
+    let current_positions = points
+        .par_iter()
+        .map(|point| point.position)
+        .collect::<Vec<[f32; 3]>>();
+    let current_positions_bytes = unsafe { wgpu::bytes::from_slice(&current_positions) };
+    let current_positions_size =
+        wgpu::BufferSize::new((points.len() * std::mem::size_of::<[f32; 3]>()) as u64).unwrap();
+    let current_positions_buffer = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("Current Positions Buffer"),
+        contents: current_positions_bytes,
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
+    });
+
+    (current_positions_buffer, current_positions_size)
+}
+
+fn create_vertex_buffer(device: &wgpu::Device, points: &[Point]) -> (wgpu::Buffer, u32) {
+    // Create the vertex buffer
+    let vertices_bytes = Point::as_bytes(points);
+    let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("Vertex Buffer"),
+        contents: vertices_bytes,
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+    (vertex_buffer, points.len() as u32)
+}
+
+fn create_cloud_data_buffer(device: &wgpu::Device, cloud_data: CloudData) -> wgpu::Buffer {
+    let cloud_data_bytes = cloud_data.as_bytes();
+    device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("Cloud Data Uniforms Buffer"),
+        contents: cloud_data_bytes,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    })
+}
 fn create_depth_texture(
     device: &wgpu::Device,
     size: [u32; 2],
