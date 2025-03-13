@@ -1,9 +1,8 @@
 use e57::{CartesianCoordinate, E57Reader};
-use nalgebra::Point3;
 use rand::Rng;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
-use crate::{PixelType, point::Point};
+use crate::point::Point;
 
 /// Generates a random point cloud with the given number of points.
 pub fn generate_random_point_cloud(
@@ -16,18 +15,20 @@ pub fn generate_random_point_cloud(
     let mut points = Vec::with_capacity(num_points);
 
     (0..num_points).for_each(|_| {
-        let x = rng.random_range(range_x.0..range_x.1);
-        let y = rng.random_range(range_y.0..range_y.1);
-        let z = rng.random_range(range_z.0..range_z.1);
+        let position = [
+            rng.random_range(range_x.0..range_x.1),
+            rng.random_range(range_y.0..range_y.1),
+            rng.random_range(range_z.0..range_z.1),
+        ];
 
-        let color = PixelType::from([
-            rng.random_range(0..255),
-            rng.random_range(0..255),
-            rng.random_range(0..255),
+        let color = [
+            rng.random_range(0..=255),
+            rng.random_range(0..=255),
+            rng.random_range(0..=255),
             255,
-        ]);
+        ];
 
-        points.push(Point::new(Point3::new(x, y, z), color));
+        points.push(Point::new(position, color));
     });
 
     points
@@ -71,21 +72,16 @@ pub fn read_e57(path: &str) -> Result<Vec<Point>, &'static str> {
                 // We use the Z-up coordinate system,
                 // so we swap the Y and Z coordinates
                 if let CartesianCoordinate::Valid { x, y, z } = p.cartesian {
-                    point.position.x = -x as f32;
-                    point.position.y = z as f32;
-                    point.position.z = y as f32;
+                    point.position[0] = -x as f32;
+                    point.position[1] = z as f32;
+                    point.position[2] = y as f32;
                 } else {
                     return None;
                 }
 
                 // If available, write RGB color or intensity color values
                 if let Some(color) = p.color {
-                    point.color = PixelType::from([
-                        (color.red * 255.) as u8,
-                        (color.green * 255.) as u8,
-                        (color.blue * 255.) as u8,
-                        255,
-                    ]);
+                    point.set_color_f32([color.red, color.green, color.blue, 1.0]);
                 }
 
                 Some(point)

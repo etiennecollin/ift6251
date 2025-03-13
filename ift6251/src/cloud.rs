@@ -1,21 +1,24 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    sync::{Arc, Mutex},
+};
 
-use ift6251::utils::images::create_texture;
 use nannou::{
-    image::{self, ImageBuffer},
     noise::{NoiseFn, Perlin},
     prelude::*,
+    state::keys,
+    winit,
 };
 use nannou_audio::{Buffer, Host, Stream};
 use nannou_egui::{
-    Egui, FrameCtx,
+    Egui,
     egui::{self},
 };
 use point_cloud_renderer::{
-    camera::{Camera, CameraReferenceFrame, Direction},
+    camera::{Camera, Direction},
     loader::{generate_random_point_cloud, read_e57},
+    pipeline::GPUPipeline,
     point::Point,
-    render::render_image,
 };
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
@@ -23,17 +26,16 @@ use rayon::iter::{
 use spectrum_analyzer::{FrequencyLimit, samples_fft_to_spectrum, windows::hann_window};
 
 fn main() {
-    nannou::app(model).update(update).run()
+    nannou::app(model).event(event).update(update).run();
 }
 
 struct State {
-    camera: Camera,
     cloud_file_path: String,
     audio_file_path: String,
     initial_points: Vec<Point>,
     points: Vec<Point>,
-    image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-    movement_speed: f32,
+    movement_speed: f64,
+    mouse_sensitivity: f32,
     noise: Perlin,
     noise_scale: f32,
     wind_strength: f32,
@@ -50,9 +52,14 @@ struct Audio {
 }
 
 struct Model {
+    window_id: WindowId,
     egui: Egui,
     state: State,
-    stream: Stream<Audio>,
+    audio_stream: Stream<Audio>,
+    shader_pipeline: RefCell<GPUPipeline>,
+    update_points: bool,
+    update_camera: RefCell<bool>,
+    camera_is_active: bool,
 }
 
 fn random_points() -> Vec<Point> {
@@ -71,9 +78,24 @@ fn model(app: &App) -> Model {
         .key_pressed(key_pressed)
         .build()
         .unwrap();
-
     let window = app.window(window_id).unwrap();
-    let (width, height) = window.rect().w_h();
+
+    // Get control of the cursor
+    let camera_is_active = true;
+    if let Err(e) = window.set_cursor_grab(true) {
+        eprintln!("warning: cursor grabbing not supported: {e}");
+    }
+    window.set_cursor_visible(false);
+
+    // Generate a random point cloud
+    let points = random_points();
+
+    // Create the camera
+    let eye = Point3::new(0.0, 0.0, 1.0);
+    let camera = Camera::new(eye);
+
+    // Initialise the shader pipeline
+    let shader_pipeline = RefCell::new(GPUPipeline::new(&window, &points, camera));
 
     // Initialise the state that we want to live on the audio thread.
     let audio_host = Host::new();
@@ -86,38 +108,23 @@ fn model(app: &App) -> Model {
     };
 
     // Create audio stream
-    let stream = audio_host
+    let audio_stream = audio_host
         .new_output_stream(audio_model)
         .render(audio)
         .build()
         .unwrap();
 
-    // Define camera position and orientation
-    let reference_frame = CameraReferenceFrame::default();
-
-    // Create the camera
-    let mut camera = Camera::new(
-        reference_frame,
-        120.0,
-        1.0,
-        (width as usize, height as usize),
-    );
-
-    // Generate a random point cloud
-    let points = random_points();
-    camera.fit_points(&points);
-
     // Create noise
     let noise = Perlin::new();
 
+    // Create the state
     let state = State {
-        camera,
         cloud_file_path: "./data/union_station.e57".to_owned(),
         audio_file_path: "./data/audio.wav".to_owned(),
         initial_points: points.clone(),
         points,
-        image: ImageBuffer::new(width as u32, height as u32),
-        movement_speed: 5.0,
+        movement_speed: 0.5,
+        mouse_sensitivity: 0.003,
         noise,
         noise_scale: 0.0,
         wind_strength: 0.2,
@@ -131,10 +138,31 @@ fn model(app: &App) -> Model {
     let egui = Egui::from_window(&window);
 
     Model {
+        window_id,
         egui,
         state,
-        stream,
+        audio_stream,
+        shader_pipeline,
+        update_points: false,
+        update_camera: RefCell::new(false),
+        camera_is_active,
     }
+}
+
+fn view(_app: &App, model: &Model, frame: Frame) {
+    let mut pipeline = model.shader_pipeline.borrow_mut();
+
+    // Check if the camera has been updated
+    if *model.update_camera.borrow() {
+        // Update the camera uniforms
+        let device = frame.device_queue_pair().device();
+        let encoder = &mut frame.command_encoder();
+        pipeline.update_uniforms(device, encoder);
+        *model.update_camera.borrow_mut() = false;
+    }
+
+    pipeline.render(&frame);
+    model.egui.draw_to_frame(&frame).unwrap();
 }
 
 fn audio(audio: &mut Audio, buffer: &mut Buffer) {
@@ -197,32 +225,29 @@ fn audio(audio: &mut Audio, buffer: &mut Buffer) {
     *audio.fft_output.lock().unwrap() = magnitude;
 }
 
-fn update(_app: &App, model: &mut Model, update: Update) {
-    let egui = &mut model.egui;
-    let state = &mut model.state;
+fn update(app: &App, model: &mut Model, update: Update) {
     let time = update.since_start.secs();
 
     // Update GUI
-    egui.set_elapsed_time(update.since_start);
-    let ctx = egui.begin_frame();
-    update_egui(ctx, state, &mut model.stream);
+    model.egui.set_elapsed_time(update.since_start);
+    update_egui(model);
 
     // Get the audio strength
-    let audio_strength = *state.fft_output.lock().unwrap();
-    flow(state, time, audio_strength);
+    let audio_strength = *model.state.fft_output.lock().unwrap();
+    flow(&mut model.state, time, audio_strength);
 
-    // Render the image
-    let image = render_image(&state.camera, &state.points);
-    let resolution = state.camera.screen.resolution;
-    let image = nannou::image::ImageBuffer::from_raw(
-        resolution.0 as u32,
-        resolution.1 as u32,
-        image.into_raw(),
-    )
-    .unwrap();
+    // Update the points on the GPU
+    let window = app.window(model.window_id).unwrap();
+    let mut pipeline = model.shader_pipeline.borrow_mut();
+    pipeline.update_points(window.device(), &model.state.points);
+    model.update_points = false;
 
-    // Update the image in the state
-    state.image = image;
+    // Update the camera position
+    if model.camera_is_active {
+        let velocity = (update.since_last.secs() * model.state.movement_speed) as f32;
+        update_camera_position(pipeline.camera_mut(), velocity, &app.keys.down);
+        *model.update_camera.borrow_mut() = true;
+    }
 }
 
 fn flow(state: &mut State, time: f64, audio_strength: f32) {
@@ -240,57 +265,68 @@ fn flow(state: &mut State, time: f64, audio_strength: f32) {
 
     points.par_iter_mut().enumerate().for_each(|(i, point)| {
         let initial_position = initial_points[i].position; // Get the original position of the point
-        let x = point.position.x as f64 * scale;
-        let y = point.position.y as f64 * scale;
-        let z = point.position.z as f64 * scale;
+        let x = point.position[0] as f64 * scale;
+        let y = point.position[1] as f64 * scale;
+        let z = point.position[2] as f64 * scale;
 
         // Simulate wind-like vector field using noise or another function
         let wind = noise.get([x, y, z, scaled_time]) as f32 * wind_strength;
 
         // Apply wind force to the point's position
-        point.position.x += wind;
-        point.position.y += wind;
-        point.position.z += wind;
+        point.position[0] += wind;
+        point.position[1] += wind;
+        point.position[2] += wind;
 
         // Calculate the distance from the original position
-        let displacement = point.position - initial_position;
+        let displacement = [
+            point.position[0] - initial_position[0],
+            point.position[1] - initial_position[1],
+            point.position[2] - initial_position[2],
+        ];
 
         // Apply the spring-like restorative force
-        point.position -= spring_constant * displacement;
+        point.position[0] -= spring_constant * displacement[0];
+        point.position[1] -= spring_constant * displacement[1];
+        point.position[2] -= spring_constant * displacement[2];
     });
 }
 
-fn view(app: &App, model: &Model, frame: Frame) {
-    // Setup the drawing context
-    let draw = app.draw();
-    let state = &model.state;
-
-    frame.clear(BLACK);
-
-    let texture = create_texture(app.main_window(), state.image.clone());
-    draw.texture(&texture);
-
-    draw.to_frame(app, &frame).unwrap();
-    model.egui.draw_to_frame(&frame).unwrap();
+fn update_camera_position(camera: &mut Camera, velocity: f32, keys: &keys::Down) {
+    // Go forwards on W.
+    if keys.contains(&Key::W) {
+        camera.move_towards(Direction::Forward, velocity);
+    }
+    // Go backwards on S.
+    if keys.contains(&Key::R) {
+        camera.move_towards(Direction::Backward, velocity);
+    }
+    // Strafe left on A.
+    if keys.contains(&Key::A) {
+        camera.move_towards(Direction::Left, velocity);
+    }
+    // Strafe right on D.
+    if keys.contains(&Key::S) {
+        camera.move_towards(Direction::Right, velocity);
+    }
+    // Float down on Q.
+    if keys.contains(&Key::Q) {
+        camera.move_towards(Direction::Down, velocity);
+    }
+    // Float up on E.
+    if keys.contains(&Key::F) {
+        camera.move_towards(Direction::Up, velocity);
+    }
 }
 
-fn update_egui(ctx: FrameCtx, state: &mut State, stream: &mut Stream<Audio>) {
-    let camera = &mut state.camera;
+fn update_egui(model: &mut Model) {
+    let ctx = model.egui.begin_frame();
+    let state = &mut model.state;
+    let audio_stream = &mut model.audio_stream;
+
     // Generate the settings window
     egui::Window::new("Settings")
         .default_width(0.0)
         .show(&ctx, |ui| {
-            ui.label("fov:");
-            let mut fov = camera.fov();
-            ui.add(egui::Slider::new(&mut fov, 1.0..=180.0));
-
-            if fov != camera.fov() {
-                camera.update_fov(fov);
-            }
-
-            ui.label("screen_distance:");
-            ui.add(egui::Slider::new(&mut camera.screen_distance, 1.0..=10.0));
-
             ui.label("noise_scale:");
             ui.add(egui::Slider::new(&mut state.noise_scale, 0.0..=0.1));
 
@@ -301,7 +337,13 @@ fn update_egui(ctx: FrameCtx, state: &mut State, stream: &mut Stream<Audio>) {
             ui.add(egui::Slider::new(&mut state.spring_constant, 0.0..=0.5));
 
             ui.label("movement_speed:");
-            ui.add(egui::Slider::new(&mut state.movement_speed, 0.01..=50.0));
+            ui.add(egui::Slider::new(&mut state.movement_speed, 0.01..=1.0));
+
+            ui.label("mouse_sensitivity:");
+            ui.add(egui::Slider::new(
+                &mut state.mouse_sensitivity,
+                0.001..=0.01,
+            ));
 
             ui.label("E57 path:");
             ui.text_edit_singleline(&mut state.cloud_file_path);
@@ -319,9 +361,9 @@ fn update_egui(ctx: FrameCtx, state: &mut State, stream: &mut Stream<Audio>) {
                 };
 
                 // Update the camera and points
-                camera.fit_points(&points);
                 state.initial_points = points.clone();
                 state.points = points;
+                model.update_points = true;
             }
 
             ui.label("Audio path:");
@@ -331,12 +373,13 @@ fn update_egui(ctx: FrameCtx, state: &mut State, stream: &mut Stream<Audio>) {
             if load_audio {
                 // Load the audio file if possible
                 if let Ok(sound) = audrey::open(state.audio_file_path.clone()) {
-                    stream
+                    audio_stream
                         .send(move |audio| {
+                            audio.sounds.clear();
                             audio.sounds.push(sound);
                         })
                         .ok();
-                    stream.play().unwrap();
+                    audio_stream.play().unwrap();
                 } else {
                     eprintln!("Failed to load audio file");
                 };
@@ -350,83 +393,37 @@ fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event:
 }
 
 fn key_pressed(app: &App, model: &mut Model, key: Key) {
-    let state = &mut model.state;
-    let distance = state.movement_speed;
     match key {
         Key::X => app.quit(),
-        Key::Up => {
-            state
-                .camera
-                .reference_frame
-                .move_position(distance, Direction::Forward);
-        }
-        Key::Down => {
-            state
-                .camera
-                .reference_frame
-                .move_position(distance, Direction::Backward);
-        }
-        Key::Left => {
-            state
-                .camera
-                .reference_frame
-                .move_position(distance, Direction::Left);
-        }
-        Key::Right => {
-            state
-                .camera
-                .reference_frame
-                .move_position(distance, Direction::Right);
-        }
-        Key::Period => {
-            state
-                .camera
-                .reference_frame
-                .move_position(distance, Direction::Up);
-        }
-        Key::Comma => {
-            state
-                .camera
-                .reference_frame
-                .move_position(distance, Direction::Down);
-        }
-
-        Key::W => {
-            state
-                .camera
-                .reference_frame
-                .move_target(distance, Direction::Forward);
-        }
-        Key::S => {
-            state
-                .camera
-                .reference_frame
-                .move_target(distance, Direction::Backward);
-        }
-        Key::A => {
-            state
-                .camera
-                .reference_frame
-                .move_target(distance, Direction::Left);
-        }
-        Key::D => {
-            state
-                .camera
-                .reference_frame
-                .move_target(distance, Direction::Right);
-        }
-        Key::E => {
-            state
-                .camera
-                .reference_frame
-                .move_target(distance, Direction::Up);
-        }
-        Key::Q => {
-            state
-                .camera
-                .reference_frame
-                .move_target(distance, Direction::Down);
+        Key::Space => {
+            let window = app.main_window();
+            if !model.camera_is_active {
+                if window.set_cursor_grab(true).is_ok() {
+                    model.camera_is_active = true;
+                }
+            } else if window.set_cursor_grab(false).is_ok() {
+                model.camera_is_active = false;
+            }
+            window.set_cursor_visible(!model.camera_is_active);
         }
         _other_key => {}
+    }
+}
+
+fn event(_app: &App, model: &mut Model, event: Event) {
+    if model.camera_is_active {
+        if let Event::DeviceEvent(_device_id, winit::event::DeviceEvent::Motion { axis, value }) =
+            event
+        {
+            let delta = -value as f32 * model.state.mouse_sensitivity;
+            let mut pipeline = model.shader_pipeline.borrow_mut();
+            let camera = pipeline.camera_mut();
+            match axis {
+                // Yaw left and right on mouse x axis movement.
+                0 => camera.update_yaw(delta),
+                // Pitch up and down on mouse y axis movement.
+                _ => camera.update_pitch(delta),
+            }
+        }
     }
 }
