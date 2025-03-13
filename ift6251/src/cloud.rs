@@ -106,10 +106,6 @@ fn model(app: &App) -> Model {
         .unwrap();
 
     // Generate a random point cloud
-    // let points = match read_e57("./data/union_station.e57") {
-    //     Ok(points) => points,
-    //     Err(_) => random_points(),
-    // };
     let points = random_points();
 
     // Create the state
@@ -131,7 +127,7 @@ fn model(app: &App) -> Model {
     };
 
     // Create the camera
-    let eye = Point3::new(0.0, 0.0, 1.0);
+    let eye = Point3::new(0.0, 0.0, -1.0);
     let camera_config = CameraConfig::default().with_aspect_ratio(window_width, window_height);
     let camera = Camera::new(eye, camera_config);
 
