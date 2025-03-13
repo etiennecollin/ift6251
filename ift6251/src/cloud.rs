@@ -127,9 +127,8 @@ fn model(app: &App) -> Model {
     };
 
     // Create the camera
-    let eye = Point3::new(0.0, 0.0, -1.0);
     let camera_config = CameraConfig::default().with_aspect_ratio(window_width, window_height);
-    let camera = Camera::new(eye, camera_config);
+    let camera = Camera::new(camera_config);
 
     // Initialise the shader pipeline
     let shader_pipeline = RefCell::new(GPUPipeline::new(&window, &points, camera, cloud_data));
@@ -363,6 +362,12 @@ fn update_egui(model: &mut Model, device: &wgpu::Device) {
                     .shader_pipeline
                     .borrow_mut()
                     .new_point_cloud(device, &points);
+                model
+                    .shader_pipeline
+                    .borrow_mut()
+                    .camera_mut()
+                    .fit_points(&points);
+                *model.update_camera.borrow_mut() = true;
             }
 
             ui.label("Audio path:");
