@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use ift6251::get_save_path;
 use nannou::{prelude::*, state::keys, winit};
 use nannou_audio::{Buffer, Host, Stream};
 use nannou_egui::{
@@ -55,6 +56,9 @@ fn random_points() -> Vec<Point> {
 }
 
 fn model(app: &App) -> Model {
+    // Setup app
+    app.set_fullscreen_on_shortcut(true);
+
     // Set GPU device descriptor
     let descriptor = wgpu::DeviceDescriptor {
         label: Some("Point Cloud Renderer Device"),
@@ -337,32 +341,32 @@ fn update_egui(model: &mut Model, device: &wgpu::Device) {
 fn update_camera_position(camera: &mut Camera, velocity: f32, keys: &keys::Down) -> bool {
     let mut moved = false;
     // Go forwards on W.
-    if keys.contains(&Key::W) {
+    if keys.contains(&Key::W) || keys.contains(&Key::Up) {
         camera.move_towards(Direction::Forward, velocity);
         moved = true;
     }
     // Go backwards on S.
-    if keys.contains(&Key::R) {
+    if keys.contains(&Key::S) || keys.contains(&Key::Down) {
         camera.move_towards(Direction::Backward, velocity);
         moved = true;
     }
     // Strafe left on A.
-    if keys.contains(&Key::A) {
+    if keys.contains(&Key::A) || keys.contains(&Key::Left) {
         camera.move_towards(Direction::Left, velocity);
         moved = true;
     }
     // Strafe right on D.
-    if keys.contains(&Key::S) {
+    if keys.contains(&Key::D) || keys.contains(&Key::Right) {
         camera.move_towards(Direction::Right, velocity);
         moved = true;
     }
     // Float down on Q.
-    if keys.contains(&Key::Q) {
+    if keys.contains(&Key::Q) || keys.contains(&Key::Comma) {
         camera.move_towards(Direction::Down, velocity);
         moved = true;
     }
     // Float up on E.
-    if keys.contains(&Key::F) {
+    if keys.contains(&Key::E) || keys.contains(&Key::Period) {
         camera.move_towards(Direction::Up, velocity);
         moved = true;
     }
@@ -377,7 +381,7 @@ fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event:
 
 fn key_pressed(app: &App, model: &mut Model, key: Key) {
     match key {
-        Key::X => app.quit(),
+        Key::X | Key::Escape => app.quit(),
         Key::Space => {
             let window = app.main_window();
             if !model.camera_is_active {
@@ -389,6 +393,9 @@ fn key_pressed(app: &App, model: &mut Model, key: Key) {
             }
             window.set_cursor_visible(!model.camera_is_active);
         }
+        Key::Z => app
+            .main_window()
+            .capture_frame(get_save_path(&app.exe_name().unwrap())),
         _other_key => {}
     }
 }

@@ -182,17 +182,13 @@ Point clouds can be imported from an `e57` scan, a widely used format for 3D sca
 
 The application supports keyboard controls for navigating the environment. The following keys are available for interaction:
 
-- **Navigation (Moves the camera's position):**
-  - `W`: Move forward
-  - `S`: Move backward
-  - `A`: Move left
-  - `D`: Move right
-  - `E`: Move up
-  - `Q`: Move down
-  - `Mouse`: Move the camera
-  - `Space`: Toggle binding the cursor to the window
-- **Exit Application:**
-  - `X`: Quit the application
+- **Mouse** → Move the camera
+- **`WASD`** or **Arrow Keys** → Move camera
+- **`E` Key** or **`.` Key** → Move up
+- **`Q` Key** or **`,` Key** → Move down
+- **`Space` Key** → Toggle binding the cursor to the window
+- **`Z` Key** → Save the current frame
+- **`X` Key** or **`Esc` Key**→ Quit the application
 
 #### Running
 

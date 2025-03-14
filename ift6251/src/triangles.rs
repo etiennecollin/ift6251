@@ -11,12 +11,13 @@
 // Stroke color HSLA=(RgbHue(273.71014), 0.54207826, 0.23118138, 0.1)
 // Fill color HSLA=(RgbHue(332.50726), 0.7435478, 0.27593488, 0.01)
 
+use ift6251::get_save_path;
 use nannou::{
     color::Hue,
     noise::{NoiseFn, Perlin, Seedable},
     prelude::*,
 };
-use nannou_egui::{egui, Egui, FrameCtx};
+use nannou_egui::{Egui, FrameCtx, egui};
 
 fn main() {
     nannou::app(model).update(update).run()
@@ -250,7 +251,7 @@ fn key_pressed(app: &App, _model: &mut Model, key: Key) {
         Key::Q => app.quit(),
         Key::S => {
             app.main_window()
-                .capture_frame(app.exe_name().unwrap() + ".png");
+                .capture_frame(get_save_path(&app.exe_name().unwrap()));
         }
         _other_key => {}
     }
