@@ -1,8 +1,11 @@
-use std::{sync::Mutex, time::SystemTime};
+use std::sync::Mutex;
 
-use ift6251::utils::{
-    images::{create_texture, equalize, recalibrate},
-    mandelbrot::{get_shift_speed, is_in_mandelbrot, shift, zoom},
+use ift6251::{
+    get_save_path,
+    utils::{
+        images::{create_texture, equalize, recalibrate},
+        mandelbrot::{get_shift_speed, is_in_mandelbrot, shift, zoom},
+    },
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use nannou::{
@@ -16,16 +19,6 @@ use nannou_egui::{
     egui::{self},
 };
 use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
-
-fn get_save_path() -> String {
-    let time = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-    let path = format!("./mandelbrot_{:?}.png", time);
-    println!("Saving image to: {}", path);
-    path
-}
 
 fn main() {
     nannou::app(model).update(update).run()
@@ -94,7 +87,7 @@ fn model(app: &App) -> Model {
     Model { egui, state }
 }
 
-fn update_egui(ctx: FrameCtx, state: &mut State) {
+fn update_egui(ctx: FrameCtx, state: &mut State, app: &App) {
     // Generate the settings window
     egui::Window::new("Settings")
         .default_width(0.0)
@@ -143,7 +136,10 @@ fn update_egui(ctx: FrameCtx, state: &mut State) {
 
             let save = ui.button("Save").clicked();
             if save {
-                state.image.save(get_save_path()).unwrap();
+                state
+                    .image
+                    .save(get_save_path(&app.exe_name().unwrap()))
+                    .unwrap();
             }
         });
 }
@@ -155,7 +151,7 @@ fn update(app: &App, model: &mut Model, update: Update) {
 
     egui.set_elapsed_time(update.since_start);
     let ctx = egui.begin_frame();
-    update_egui(ctx, state);
+    update_egui(ctx, state, app);
 
     if state.redraw || state.continuous_redraw {
         let mut mandelbrot_array = compute_mandelbrot_array(width as usize, height as usize, state);
@@ -206,7 +202,11 @@ fn key_pressed(app: &App, model: &mut Model, key: Key) {
             state.redraw = true;
         }
         Key::Q => app.quit(),
-        Key::S => model.state.image.save(get_save_path()).unwrap(),
+        Key::S => model
+            .state
+            .image
+            .save(get_save_path(&app.exe_name().unwrap()))
+            .unwrap(),
         Key::Return => model.state.redraw = true,
         _other_key => {}
     }

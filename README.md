@@ -174,28 +174,21 @@ This experiment is a **point cloud renderer** that utilizes techniques inspired 
 
 The noise wind influences the point cloud’s structure, but a **spring-like restorative force** counteracts the displacement. This force is determined by the distance between a point’s displaced position and its original location, causing the cloud to behave similarly to a tree swaying in the wind.
 
+The rendering of points and displacement of points caused by the noise wind is done on the GPU using `wgpu` and `wgsl` shaders. This allows a fluid experience.
+
 Point clouds can be imported from an `e57` scan, a widely used format for 3D scanning. On iPhones, the _3d Scanner App_ can be used to generate such scans. Otherwise, multiple sites provide `e57` scans for free, such as the "Union Station" scan by _Trimble Inc_ available on [SketchUp](https://help.sketchup.com/en/scan-essentials-sketchup/sample-point-cloud-data)
 
 #### Interaction
 
-The application supports keyboard controls for navigating the camera and adjusting its target. The following keys are available for interaction:
+The application supports keyboard controls for navigating the environment. The following keys are available for interaction:
 
-- **Navigation (Moves the camera's position):**
-  - `Up Arrow (↑)`: Move forward
-  - `Down Arrow (↓)`: Move backward
-  - `Left Arrow (←)`: Move left
-  - `Right Arrow (→)`: Move right
-  - `Period (.)`: Move up
-  - `Comma (,)`: Move down
-- **Target Adjustment (Moves the camera's focal point):**
-  - `W`: Move target forward
-  - `S`: Move target backward
-  - `A`: Move target left
-  - `D`: Move target right
-  - `E`: Move target up
-  - `Q`: Move target down
-- **Exit Application:**
-  - `X`: Quit the application
+- **Mouse** → Move the camera
+- **`WASD`** or **Arrow Keys** → Move camera
+- **`E` Key** or **`.` Key** → Move up
+- **`Q` Key** or **`,` Key** → Move down
+- **`Space` Key** → Toggle binding the cursor to the window
+- **`Z` Key** → Save the current frame
+- **`X` Key** or **`Esc` Key**→ Quit the application
 
 #### Running
 
@@ -204,7 +197,3 @@ You may run the experiment using the following command:
 ```bash
 cargo run --release --bin cloud
 ```
-
-#### Next Steps
-
-The next step would be to write compute shaders to render the point cloud and to use rasterisation techniques to make the render faster and less CPU intensive.

@@ -1,4 +1,6 @@
-use nannou::prelude::*;
+use nannou::{glam::EulerRot, prelude::*};
+
+use crate::point::Point;
 
 /// Defines the direction the camera can move in
 pub enum Direction {
@@ -18,19 +20,29 @@ pub struct Camera {
     pub pitch: f32,
     /// Rotation around the y axis in radians.
     pub yaw: f32,
+    /// The configuration for the camera.
+    pub config: CameraConfig,
 }
 
 impl Camera {
     const MAX_PITCH: f32 = std::f32::consts::PI * 0.5 - 0.0001;
     const MIN_PITCH: f32 = -Self::MAX_PITCH;
+    const COORD_SCALE: f32 = 0.01;
 
     /// Creates a new camera at the given position.
-    pub fn new(eye: Point3) -> Self {
+    pub fn new(config: CameraConfig) -> Self {
         Self {
-            position: eye,
+            position: Point3::new(0.0, 0.0, -1.0),
             pitch: 0.0,
-            yaw: std::f32::consts::PI * 0.5,
+            yaw: -std::f32::consts::PI * 0.5,
+            config,
         }
+    }
+
+    /// Sets the position of the camera.
+    pub fn with_position(mut self, position: Point3) -> Self {
+        self.position = position;
+        self
     }
 
     /// Calculates the direction vector from the pitch and yaw.
@@ -38,39 +50,70 @@ impl Camera {
         Self::pitch_yaw_to_direction(self.pitch, self.yaw)
     }
 
-    /// The camera's "view" matrix.
-    pub fn view(&self) -> Mat4 {
-        let direction = self.direction();
-        let up = Vec3::Y;
-        Mat4::look_to_rh(self.position, direction, up)
-    }
-
     /// Converts a pitch and yaw to a direction vector.
     ///
     /// The pitch and yaw are in radians.
-    pub fn pitch_yaw_to_direction(pitch: f32, yaw: f32) -> Vec3 {
+    fn pitch_yaw_to_direction(pitch: f32, yaw: f32) -> Vec3 {
         let xz_unit_len = pitch.cos();
         let x = xz_unit_len * yaw.cos();
         let y = pitch.sin();
         let z = xz_unit_len * (-yaw).sin();
-        vec3(x, y, z)
+        vec3(x, y, z).normalize()
     }
 
-    /// Increment the pitch and yaw of the camera by a given delta.
+    /// Given a point cloud, choose the proper camera position and direction to fit all points
+    pub fn fit_points(&mut self, points: &[Point]) {
+        let (min, max) = Point::bounding_box(points);
+
+        // Compute the center of the bounding box
+        let center = (min + max) / 2.0;
+
+        // Compute the radius of the bounding sphere
+        let radius = (max - center).length();
+
+        // Compute the distance required to fit the entire bounding sphere
+        let angle = self.config.fov_y / 2.0;
+        let distance = radius / angle.tan();
+
+        // Move the camera backward along the new forward direction
+        self.position = (center - Vec3::Z * distance) * Self::COORD_SCALE;
+        // Look at the center first to get the correct forward direction
+        self.look_at(center);
+    }
+
+    /// Sets the pitch and yaw of the camera to look at a target.
+    pub fn look_at(&mut self, target: Point3) {
+        let current_direction = self.direction();
+        let target_direction = (target - self.position).normalize();
+
+        let rotation = Quat::from_rotation_arc(current_direction, target_direction);
+
+        // Extract pitch and yaw from the quaternion
+        let (yaw, pitch, _) = rotation.to_euler(EulerRot::YXZ);
+        self.yaw += yaw;
+        self.pitch += pitch;
+    }
+
+    /// Increments the pitch and yaw of the camera by a given delta.
     ///
     /// The pitch is clamped to prevent the camera from flipping.
     pub fn update_pitch(&mut self, pitch_delta: f32) {
         self.pitch = (self.pitch + pitch_delta).clamp(Self::MIN_PITCH, Self::MAX_PITCH);
     }
 
-    /// Increment the yaw of the camera by a given delta.
+    /// Increments the yaw of the camera by a given delta.
     ///
     /// The yaw wraps around when it reaches 2*PI.
     pub fn update_yaw(&mut self, yaw_delta: f32) {
         self.yaw = (self.yaw + yaw_delta) % (std::f32::consts::PI * 2.0);
     }
 
-    /// Move the camera in the given direction by the given amount.
+    /// Sets the position of the camera.
+    pub fn set_position(&mut self, position: Point3) {
+        self.position = position;
+    }
+
+    /// Moves the camera in the given direction by the given amount.
     pub fn move_towards(&mut self, direction: Direction, amount: f32) {
         let direction = match direction {
             Direction::Forward => self.direction(),
@@ -96,21 +139,33 @@ impl Camera {
         };
         self.position += direction * amount;
     }
-}
 
-/// Contains the various transformations of a camera.
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct Uniforms {
-    pub world: Mat4,
-    pub view: Mat4,
-    pub proj: Mat4,
-}
+    /// The projection matrix for the camera.
+    pub fn projection(&self) -> Mat4 {
+        Mat4::perspective_rh_gl(
+            self.config.fov_y,
+            self.config.aspect_ratio,
+            self.config.near,
+            self.config.far,
+        )
+    }
 
-impl Uniforms {
-    /// Returns the uniforms as a byte slice.
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe { wgpu::bytes::from(self) }
+    /// The camera's "view" matrix.
+    pub fn view(&self) -> Mat4 {
+        let direction = self.direction();
+        let up = Vec3::Y;
+        Mat4::look_to_rh(self.position, direction, up)
+    }
+
+    /// The uniforms for the camera.
+    pub fn uniforms(&self) -> CameraTransforms {
+        let scale = Mat4::from_scale(Vec3::splat(Self::COORD_SCALE));
+
+        CameraTransforms {
+            world: self.config.rotation,
+            view: (self.view() * scale),
+            proj: self.projection(),
+        }
     }
 }
 
@@ -157,27 +212,26 @@ impl CameraConfig {
         self.far = far;
         self
     }
-
-    /// The projection matrix for the camera.
-    pub fn projection(&self) -> Mat4 {
-        Mat4::perspective_rh_gl(self.fov_y, self.aspect_ratio, self.near, self.far)
-    }
-
-    /// The uniforms for the camera.
-    pub fn uniform(&self, view: Mat4) -> Uniforms {
-        let proj = self.projection();
-        let scale = Mat4::from_scale(Vec3::splat(0.01));
-
-        Uniforms {
-            world: self.rotation,
-            view: (view * scale).into(),
-            proj: proj.into(),
-        }
-    }
 }
 
 impl Default for CameraConfig {
     fn default() -> Self {
-        Self::new((800, 600), 120.0, (0.01, 100.0))
+        Self::new((800, 600), 120.0, (0.001, 100.0))
+    }
+}
+
+/// Contains the various transformations of a camera.
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct CameraTransforms {
+    pub world: Mat4,
+    pub view: Mat4,
+    pub proj: Mat4,
+}
+
+impl CameraTransforms {
+    /// Returns the struct as a byte slice.
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { wgpu::bytes::from(self) }
     }
 }

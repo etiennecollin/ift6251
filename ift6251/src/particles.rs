@@ -2,6 +2,7 @@
 // The Nature of Code - Daniel Shiffman
 // http://natureofcode.com
 
+use ift6251::get_save_path;
 use nannou::{
     noise::{NoiseFn, Perlin},
     prelude::*,
@@ -257,7 +258,7 @@ fn key_pressed(app: &App, _model: &mut Model, key: Key) {
         Key::Q => app.quit(),
         Key::S => {
             app.main_window()
-                .capture_frame(app.exe_name().unwrap() + ".png");
+                .capture_frame(get_save_path(&app.exe_name().unwrap()));
         }
         _other_key => {}
     }

@@ -1,9 +1,10 @@
-use nannou::wgpu;
+use nannou::{geom::Point3, wgpu};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Point {
     pub position: [f32; 3],
+    _padding: u32,
     pub color: [f32; 4],
 }
 
@@ -17,11 +18,15 @@ impl Point {
     /// The color is in the range [0, 255].
     pub fn new(position: [f32; 3], color: [u8; 4]) -> Self {
         let color = color.map(|c| c as f32 / 255.0);
-        Self { position, color }
+        Self {
+            position,
+            _padding: 0,
+            color,
+        }
     }
 
     /// Computes the bounding box of a point cloud.
-    pub fn bounding_box(points: &[Self]) -> ([f32; 3], [f32; 3]) {
+    pub fn bounding_box(points: &[Self]) -> (Point3, Point3) {
         let mut min_x = f32::INFINITY;
         let mut max_x = f32::NEG_INFINITY;
         let mut min_y = f32::INFINITY;
@@ -43,7 +48,10 @@ impl Point {
             max_z = max_z.max(z);
         });
 
-        ([min_x, min_y, min_z], [max_x, max_y, max_z])
+        (
+            Point3::new(min_x, min_y, min_z),
+            Point3::new(max_x, max_y, max_z),
+        )
     }
 
     /// Set the position of the point.
@@ -75,7 +83,24 @@ impl Default for Point {
     fn default() -> Self {
         Self {
             position: [0.0, 0.0, 0.0],
+            _padding: 0,
             color: [0.0, 0.0, 0.0, 1.0],
         }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CloudData {
+    pub sound_amplitude: f32,
+    pub wind_strength: f32,
+    pub noise_scale: f32,
+    pub spring_constant: f32,
+}
+
+impl CloudData {
+    /// Returns the struct as a byte slice.
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { wgpu::bytes::from(self) }
     }
 }
