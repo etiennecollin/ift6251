@@ -15,7 +15,6 @@ use point_cloud_renderer::{
     pipeline::GPUPipeline,
     point::{CloudData, Point},
 };
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spectrum_analyzer::{FrequencyLimit, samples_fft_to_spectrum, windows::hann_window};
 
 fn main() {
@@ -29,13 +28,11 @@ struct State {
     mouse_sensitivity: f32,
     cloud_data: CloudData,
     // This will be accessed by the audio thread.
-    _volume: Arc<Mutex<f32>>,
     fft_output: Arc<Mutex<f32>>,
 }
 
 struct Audio {
     sounds: Vec<audrey::read::BufFileReader>,
-    volume: Arc<Mutex<f32>>,
     fft_output: Arc<Mutex<f32>>,
 }
 
@@ -54,7 +51,7 @@ fn random_points() -> Vec<Point> {
     let range_x = (-100.0, 100.0);
     let range_y = (-100.0, 100.0);
     let range_z = (-100.0, 100.0);
-    generate_random_point_cloud(500000, range_x, range_y, range_z)
+    generate_random_point_cloud(5000000, range_x, range_y, range_z)
 }
 
 fn model(app: &App) -> Model {
@@ -90,12 +87,10 @@ fn model(app: &App) -> Model {
 
     // Initialise the state that we want to live on the audio thread.
     let audio_host = Host::new();
-    let volume = Arc::new(Mutex::new(0.0));
     let fft_output = Arc::new(Mutex::new(1.0));
     let audio_model = Audio {
-        sounds: vec![],
+        sounds: Vec::new(),
         fft_output: Arc::clone(&fft_output),
-        volume: Arc::clone(&volume),
     };
 
     // Create audio stream
@@ -122,7 +117,6 @@ fn model(app: &App) -> Model {
         mouse_sensitivity: 0.003,
         cloud_data,
         // This will be accessed by the audio thread.
-        _volume: volume,
         fft_output,
     };
 
@@ -171,69 +165,7 @@ fn view(_app: &App, model: &Model, frame: Frame) {
     model.egui.draw_to_frame(&frame).unwrap();
 }
 
-fn audio(audio: &mut Audio, buffer: &mut Buffer) {
-    let mut have_ended = vec![];
-    let len_frames = buffer.len_frames();
-    let mut rms_volume = 0.0;
-
-    // Sum all of the sounds onto the buffer.
-    for (i, sound) in audio.sounds.iter_mut().enumerate() {
-        let mut frame_count = 0;
-        let file_frames = sound.frames::<[f32; 2]>().filter_map(Result::ok);
-        for (frame, file_frame) in buffer.frames_mut().zip(file_frames) {
-            let mut frame_rms = 0.0; // Compute the root mean square of the frame
-            for (sample, file_sample) in frame.iter_mut().zip(&file_frame) {
-                *sample += *file_sample;
-                frame_rms += file_sample.powi(2);
-            }
-            rms_volume += (frame_rms / 2.0).sqrt();
-            frame_count += 1;
-        }
-
-        // If the sound yielded less samples than are in the buffer, it must have ended.
-        if frame_count < len_frames {
-            have_ended.push(i);
-        }
-    }
-
-    // Remove all sounds that have ended.
-    for i in have_ended.into_iter().rev() {
-        audio.sounds.remove(i);
-    }
-
-    // Normalize the volume
-    let volume = rms_volume / len_frames as f32 * 100.0;
-    // Update the volume value
-    *audio.volume.lock().unwrap() = volume;
-
-    // Merge the audio channels
-    let fft_input: Vec<f32> = buffer.frames().flatten().cloned().collect();
-
-    // Apply hann window for smoothing; length must be a power of 2 for the FFT
-    let hann_window = hann_window(&fft_input);
-
-    // Compute the FFT and get the spectrum
-    let spectrum = samples_fft_to_spectrum(
-        &hann_window,
-        buffer.sample_rate(),
-        FrequencyLimit::Min(80.0),
-        None,
-    )
-    .ok();
-
-    // Compute the sum of the magnitudes
-    let magnitude = match spectrum {
-        Some(s) => s.data().par_iter().map(|f| f.1.val()).sum::<f32>().max(1.0),
-        None => 1.0,
-    };
-
-    // Update the audio strength value
-    *audio.fft_output.lock().unwrap() = magnitude;
-}
-
 fn update(app: &App, model: &mut Model, update: Update) {
-    let time = update.since_start.secs();
-
     // Update GUI
     model.egui.set_elapsed_time(update.since_start);
     let window = app.window(model.window_id).unwrap();
@@ -259,47 +191,58 @@ fn update(app: &App, model: &mut Model, update: Update) {
     }
 }
 
-fn update_camera_position(camera: &mut Camera, velocity: f32, keys: &keys::Down) -> bool {
-    let mut moved = false;
-    // Go forwards on W.
-    if keys.contains(&Key::W) {
-        camera.move_towards(Direction::Forward, velocity);
-        moved = true;
-    }
-    // Go backwards on S.
-    if keys.contains(&Key::R) {
-        camera.move_towards(Direction::Backward, velocity);
-        moved = true;
-    }
-    // Strafe left on A.
-    if keys.contains(&Key::A) {
-        camera.move_towards(Direction::Left, velocity);
-        moved = true;
-    }
-    // Strafe right on D.
-    if keys.contains(&Key::S) {
-        camera.move_towards(Direction::Right, velocity);
-        moved = true;
-    }
-    // Float down on Q.
-    if keys.contains(&Key::Q) {
-        camera.move_towards(Direction::Down, velocity);
-        moved = true;
-    }
-    // Float up on E.
-    if keys.contains(&Key::F) {
-        camera.move_towards(Direction::Up, velocity);
-        moved = true;
-    }
+fn audio(audio: &mut Audio, buffer: &mut Buffer) {
+    let mut have_ended = vec![];
+    let len_frames = buffer.len_frames();
 
-    moved
+    // Sum all of the sounds onto the buffer.
+    audio.sounds.iter_mut().enumerate().for_each(|(i, sound)| {
+        let mut frame_count = 0;
+        let file_frames = sound.frames::<[f32; 2]>().filter_map(Result::ok);
+        for (frame, file_frame) in buffer.frames_mut().zip(file_frames) {
+            for (sample, file_sample) in frame.iter_mut().zip(&file_frame) {
+                *sample += *file_sample;
+            }
+            frame_count += 1;
+        }
+
+        // If the sound yielded less samples than are in the buffer, it must have ended.
+        if frame_count < len_frames {
+            have_ended.push(i);
+        }
+    });
+
+    // Remove all sounds that have ended.
+    have_ended.into_iter().rev().for_each(|i| {
+        audio.sounds.remove(i);
+    });
+
+    // Merge the audio channels and compute the FFT
+    let samples: Vec<_> = buffer.frames().flatten().cloned().collect();
+    let magnitude = compute_fft(&samples, buffer.sample_rate());
+
+    // Update the audio strength value
+    *audio.fft_output.lock().unwrap() = magnitude;
+}
+
+fn compute_fft(samples: &[f32], sample_rate: u32) -> f32 {
+    // Apply hann window for smoothing; length must be a power of 2 for the FFT
+    let hann_window = hann_window(samples);
+
+    // Compute the FFT and get the spectrum
+    let spectrum =
+        samples_fft_to_spectrum(&hann_window, sample_rate, FrequencyLimit::Min(80.0), None).ok();
+
+    // Compute the sum of the magnitudes
+    match spectrum {
+        Some(s) => s.data().iter().map(|f| f.1.val()).sum::<f32>().max(1.0),
+        None => 1.0,
+    }
 }
 
 fn update_egui(model: &mut Model, device: &wgpu::Device) {
     let ctx = model.egui.begin_frame();
     let state = &mut model.state;
-    let audio_stream = &mut model.audio_stream;
-
     // Generate the settings window
     egui::Window::new("Settings")
         .default_width(0.0)
@@ -373,10 +316,10 @@ fn update_egui(model: &mut Model, device: &wgpu::Device) {
             ui.label("Audio path:");
             ui.text_edit_singleline(&mut state.audio_file_path);
 
-            let load_audio = ui.button("Load file").clicked();
-            if load_audio {
+            if ui.button("Load file").clicked() {
+                let audio_stream = &mut model.audio_stream;
                 // Load the audio file if possible
-                if let Ok(sound) = audrey::open(state.audio_file_path.clone()) {
+                if let Ok(sound) = audrey::open(&state.audio_file_path) {
                     audio_stream
                         .send(move |audio| {
                             audio.sounds.clear();
@@ -389,6 +332,42 @@ fn update_egui(model: &mut Model, device: &wgpu::Device) {
                 };
             }
         });
+}
+
+fn update_camera_position(camera: &mut Camera, velocity: f32, keys: &keys::Down) -> bool {
+    let mut moved = false;
+    // Go forwards on W.
+    if keys.contains(&Key::W) {
+        camera.move_towards(Direction::Forward, velocity);
+        moved = true;
+    }
+    // Go backwards on S.
+    if keys.contains(&Key::R) {
+        camera.move_towards(Direction::Backward, velocity);
+        moved = true;
+    }
+    // Strafe left on A.
+    if keys.contains(&Key::A) {
+        camera.move_towards(Direction::Left, velocity);
+        moved = true;
+    }
+    // Strafe right on D.
+    if keys.contains(&Key::S) {
+        camera.move_towards(Direction::Right, velocity);
+        moved = true;
+    }
+    // Float down on Q.
+    if keys.contains(&Key::Q) {
+        camera.move_towards(Direction::Down, velocity);
+        moved = true;
+    }
+    // Float up on E.
+    if keys.contains(&Key::F) {
+        camera.move_towards(Direction::Up, velocity);
+        moved = true;
+    }
+
+    moved
 }
 
 fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event::WindowEvent) {
