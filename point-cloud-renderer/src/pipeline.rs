@@ -1,7 +1,9 @@
 use nannou::prelude::*;
 
-use crate::camera::{Camera, CameraTransforms};
-use crate::point::{CloudData, Point};
+use crate::{
+    camera::{Camera, CameraTransforms},
+    point::{CloudData, Point},
+};
 
 pub struct GPUPipeline {
     vertex_buffer: wgpu::Buffer,
