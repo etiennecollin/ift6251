@@ -100,6 +100,7 @@ fn model(app: &App) -> Model {
     // Create audio stream
     let audio_stream = audio_host
         .new_output_stream(audio_model)
+        .sample_rate(48000)
         .render(audio)
         .build()
         .unwrap();
