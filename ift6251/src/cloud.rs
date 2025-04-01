@@ -64,7 +64,8 @@ fn model(app: &App) -> Model {
         label: Some("Point Cloud Renderer Device"),
         features: wgpu::Features::default(),
         limits: wgpu::Limits {
-            max_storage_buffer_binding_size: 2 << 30,
+            max_storage_buffer_binding_size: 2 << 30, // To support big point clouds
+            max_texture_dimension_2d: 2 << 14,        // To support the big 9x3 4K display wall
             ..Default::default()
         },
     };
