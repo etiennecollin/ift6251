@@ -1,5 +1,5 @@
 [workspace]
-members = ["ift6251", "point-cloud-renderer"]
+members = ["crates/ift6251", "crates/point-cloud-renderer"]
 resolver = "2"
 
 [profile.fast]
