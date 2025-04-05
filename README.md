@@ -25,7 +25,6 @@ Here is the URL to the course repo: https://github.com/rethread-studio/algorithm
   - [cloud](#cloud)
     - [Interaction](#interaction-4)
     - [Running](#running-4)
-    - [Next Steps](#next-steps-1)
 
 <!-- vim-markdown-toc -->
 
