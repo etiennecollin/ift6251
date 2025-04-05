@@ -178,6 +178,8 @@ The rendering of points and displacement of points caused by the noise wind is d
 
 Point clouds can be imported from an `e57` scan, a widely used format for 3D scanning. On iPhones, the _3d Scanner App_ can be used to generate such scans. Otherwise, multiple sites provide `e57` scans for free, such as the "Union Station" scan by _Trimble Inc_ available on [SketchUp](https://help.sketchup.com/en/scan-essentials-sketchup/sample-point-cloud-data)
 
+The experiment is greatly inspired by [nakade](https://v-os.ca/Nakade), a collaboration between [Léa Demeule](https://leademeule.com) and [Victor Ivanov](https://v-os.ca).
+
 #### Interaction
 
 The application supports keyboard controls for navigating the environment. The following keys are available for interaction:
